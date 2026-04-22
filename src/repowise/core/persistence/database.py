@@ -16,6 +16,7 @@ from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from pathlib import Path
 
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -201,7 +202,20 @@ def create_engine(
         # PostgreSQL — asyncpg handles its own connection pool
         kwargs["pool_pre_ping"] = True
 
-    return create_async_engine(db_url, **kwargs)
+    engine = create_async_engine(db_url, **kwargs)
+
+    if is_sqlite and not (use_static_pool or ":memory:" in db_url):
+        # WAL mode allows multiple concurrent writers across processes.
+        # busy_timeout makes SQLite retry for up to 10 s instead of
+        # immediately raising "database is locked".
+        @event.listens_for(engine.sync_engine, "connect")
+        def _set_sqlite_wal(dbapi_conn, _record):
+            cursor = dbapi_conn.cursor()
+            cursor.execute("PRAGMA journal_mode=WAL")
+            cursor.execute("PRAGMA busy_timeout=10000")
+            cursor.close()
+
+    return engine
 
 
 def create_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
