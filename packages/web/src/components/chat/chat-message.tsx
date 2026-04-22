@@ -50,7 +50,7 @@ export function ChatMessage({ message, repoId, onViewArtifact }: ChatMessageProp
       >
         {/* User message */}
         {isUser && (
-          <div className="rounded-2xl rounded-tr-sm bg-[var(--color-accent-primary)] px-4 py-2.5 text-base text-white max-w-[85%]">
+          <div className="rounded-2xl rounded-tr-sm bg-[var(--color-accent-primary)] px-4 py-2.5 text-sm text-white max-w-[85%]">
             {message.text}
           </div>
         )}

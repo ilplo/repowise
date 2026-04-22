@@ -6,32 +6,32 @@ import type { Components } from "react-markdown";
 
 const components: Components = {
   h1: ({ children }) => (
-    <h1 className="text-lg font-semibold text-[var(--color-text-primary)] mt-4 mb-2">
+    <h1 className="text-base font-semibold text-[var(--color-text-primary)] mt-4 mb-2">
       {children}
     </h1>
   ),
   h2: ({ children }) => (
-    <h2 className="text-base font-semibold text-[var(--color-text-primary)] mt-3 mb-1.5">
+    <h2 className="text-sm font-semibold text-[var(--color-text-primary)] mt-3 mb-1.5">
       {children}
     </h2>
   ),
   h3: ({ children }) => (
-    <h3 className="text-base font-medium text-[var(--color-text-primary)] mt-2 mb-1">
+    <h3 className="text-sm font-medium text-[var(--color-text-primary)] mt-2 mb-1">
       {children}
     </h3>
   ),
   p: ({ children }) => (
-    <p className="text-base text-[var(--color-text-secondary)] leading-relaxed mb-2">
+    <p className="text-sm text-[var(--color-text-secondary)] leading-relaxed mb-2">
       {children}
     </p>
   ),
   ul: ({ children }) => (
-    <ul className="list-disc ml-4 text-base text-[var(--color-text-secondary)] space-y-0.5 mb-2">
+    <ul className="list-disc ml-4 text-sm text-[var(--color-text-secondary)] space-y-0.5 mb-2">
       {children}
     </ul>
   ),
   ol: ({ children }) => (
-    <ol className="list-decimal ml-4 text-base text-[var(--color-text-secondary)] space-y-0.5 mb-2">
+    <ol className="list-decimal ml-4 text-sm text-[var(--color-text-secondary)] space-y-0.5 mb-2">
       {children}
     </ol>
   ),
@@ -42,7 +42,7 @@ const components: Components = {
       return (
         <pre className="my-2 rounded-md bg-[var(--color-bg-inset)] border border-[var(--color-border-default)] p-3 overflow-x-auto">
           <code
-            className="text-sm font-mono text-[var(--color-text-primary)]"
+            className="text-xs font-mono text-[var(--color-text-primary)]"
             {...props}
           >
             {children}
@@ -52,7 +52,7 @@ const components: Components = {
     }
     return (
       <code
-        className="rounded px-1.5 py-0.5 bg-[var(--color-bg-elevated)] text-[var(--color-accent-primary)] text-sm font-mono"
+        className="rounded px-1.5 py-0.5 bg-[var(--color-bg-elevated)] text-[var(--color-accent-primary)] text-xs font-mono"
         {...props}
       >
         {children}
@@ -77,7 +77,7 @@ const components: Components = {
   ),
   table: ({ children }) => (
     <div className="overflow-x-auto my-2">
-      <table className="text-sm w-full border-collapse">{children}</table>
+      <table className="text-xs w-full border-collapse">{children}</table>
     </div>
   ),
   th: ({ children }) => (
