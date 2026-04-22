@@ -46,8 +46,15 @@ def _resolve_embedder(embedder_flag: str | None) -> str:
 
 def _start_mcp_daemon(repo_path: Path) -> None:
     """Start the MCP SSE server as a detached background process."""
+    import os
     import subprocess
     import sys
+    from pathlib import Path as _Path
+
+    src_root = str(_Path(__file__).resolve().parents[3])  # .../src
+    env = dict(os.environ)
+    existing = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = f"{src_root}{os.pathsep}{existing}" if existing else src_root
 
     try:
         subprocess.Popen(
@@ -56,6 +63,7 @@ def _start_mcp_daemon(repo_path: Path) -> None:
             stderr=subprocess.DEVNULL,
             stdin=subprocess.DEVNULL,
             start_new_session=True,
+            env=env,
         )
     except Exception:
         pass  # Non-fatal — user can start it manually

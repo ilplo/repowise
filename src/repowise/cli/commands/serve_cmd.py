@@ -13,6 +13,16 @@ from pathlib import Path
 
 import click
 
+
+def _source_env() -> dict[str, str]:
+    """Return os.environ with PYTHONPATH pointing at the repo src/ tree."""
+    src_root = str(Path(__file__).resolve().parents[3])  # .../src
+    env = dict(os.environ)
+    existing = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = f"{src_root}{os.pathsep}{existing}" if existing else src_root
+    return env
+
+
 from repowise.app_runtime import (
     ensure_app_data_dir,
     get_server_log_path,
@@ -214,6 +224,7 @@ def restart_server(
             stderr=subprocess.STDOUT,
             stdin=subprocess.DEVNULL,
             start_new_session=True,
+            env=_source_env(),
         )
 
 def _node_available() -> str | None:
@@ -273,6 +284,7 @@ def _start_mcp(repo_path: Path, mcp_port: int) -> subprocess.Popen | None:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             stdin=subprocess.DEVNULL,
+            env=_source_env(),
         )
     except Exception as exc:
         console.print(f"[yellow]Could not start MCP server: {exc}[/yellow]")
