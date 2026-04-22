@@ -280,7 +280,7 @@ export function QuickActions({ repoId, repoName, pageCount = 0, modelName = "", 
             {estimate && estimate.cost === 0 && (
               <div className="rounded-lg border border-[var(--color-border-default)] bg-[var(--color-bg-inset)] p-3">
                 <p className="text-xs text-[var(--color-success)] text-center">
-                  No API cost — running locally via Ollama
+                  No estimated cost
                 </p>
               </div>
             )}
