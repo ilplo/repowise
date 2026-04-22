@@ -63,14 +63,20 @@ async def create_repo(
         settings=body.settings,
     )
 
-    # Write .mcp.json to repo root and runtime dir so editors auto-discover it,
-    # matching what `repowise init` does.
+    # Write .mcp.json and register with editors, matching what `repowise init` does.
     try:
-        from repowise.cli.mcp_config import save_mcp_config, save_root_mcp_config
+        from repowise.cli.mcp_config import (
+            register_with_claude_code,
+            register_with_claude_desktop,
+            save_mcp_config,
+            save_root_mcp_config,
+        )
 
         repo_path = Path(local_path)
         await asyncio.to_thread(save_mcp_config, repo_path)
         await asyncio.to_thread(save_root_mcp_config, repo_path)
+        await asyncio.to_thread(register_with_claude_desktop, repo_path)
+        await asyncio.to_thread(register_with_claude_code, repo_path)
     except Exception:
         logger.warning("mcp_config_write_failed", extra={"local_path": local_path}, exc_info=True)
 
