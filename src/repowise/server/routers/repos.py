@@ -51,6 +51,8 @@ async def create_repo(
     session: AsyncSession = Depends(get_db_session),  # noqa: B008
 ) -> RepoResponse:
     """Register a new repository (or update if same local_path exists)."""
+    from pathlib import Path
+
     local_path = _validated_repo_local_path(body.local_path)
     repo = await crud.upsert_repository(
         session,
@@ -60,6 +62,18 @@ async def create_repo(
         default_branch=body.default_branch,
         settings=body.settings,
     )
+
+    # Write .mcp.json to repo root and runtime dir so editors auto-discover it,
+    # matching what `repowise init` does.
+    try:
+        from repowise.cli.mcp_config import save_mcp_config, save_root_mcp_config
+
+        repo_path = Path(local_path)
+        await asyncio.to_thread(save_mcp_config, repo_path)
+        await asyncio.to_thread(save_root_mcp_config, repo_path)
+    except Exception:
+        logger.warning("mcp_config_write_failed", extra={"local_path": local_path}, exc_info=True)
+
     return RepoResponse.from_orm(repo)
 
 
