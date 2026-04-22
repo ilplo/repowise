@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "repowise": {
+      "command": "/Users/ilya/miniconda3/bin/repowise",
+      "args": [
+        "mcp",
+        "/Users/ilya/Documents/GitHub/repowise",
+        "--transport",
+        "stdio"
+      ],
+      "description": "repowise: codebase intelligence \u2014 docs, graph, git signals, dead code, decisions"
+    }
+  }
+}

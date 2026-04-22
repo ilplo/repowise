@@ -26,14 +26,16 @@ from repowise.target_repo import TargetRepoResolutionError, resolve_target_repo_
 _log = __import__("logging").getLogger("repowise.mcp")
 
 
-def _resolve_embedder():
+async def _resolve_embedder():
     """Resolve embedder from env var or the central app config."""
     name = os.environ.get("REPOWISE_EMBEDDER", "").lower()
     if not name and _state._repo_path:
         try:
-            from repowise.cli.helpers import load_config
+            from repowise.cli.helpers import _load_repo_settings_async
 
-            cfg = load_config(resolve_target_repo_paths(_state._repo_path).repo_path)
+            cfg = await _load_repo_settings_async(
+                resolve_target_repo_paths(_state._repo_path).repo_path
+            )
             name = (cfg.get("embedder") or "").lower()
         except Exception:
             _log.debug("Failed to read embedder from repository settings", exc_info=True)
@@ -98,7 +100,7 @@ async def _load_vector_stores(repo_path: str | None) -> None:
     import asyncio as _asyncio
 
     try:
-        embedder = _resolve_embedder()
+        embedder = await _resolve_embedder()
         vector_store: Any = InMemoryVectorStore(embedder=embedder)
         decision_store: Any = InMemoryVectorStore(embedder=embedder)
 

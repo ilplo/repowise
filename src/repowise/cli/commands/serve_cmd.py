@@ -49,60 +49,8 @@ def _setup_embedder() -> None:
             _set_api_key_env(saved_embedder, cfg["embedder_api_key"])
         return
 
-    # Detect which providers already have keys in the environment.
-    has_gemini = bool(os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY"))
-    has_openai = bool(os.environ.get("OPENAI_API_KEY"))
-
-    console.print(
-        "\n[bold]Chat & search require an embedder.[/bold] "
-        "Choose one or skip (other features still work).\n"
-    )
-
-    options = []
-    labels = []
-    if has_gemini:
-        options.append("gemini")
-        labels.append("[1] gemini  [green]✓ key set[/green]")
-    else:
-        options.append("gemini")
-        labels.append("[1] gemini  [dim]needs GEMINI_API_KEY / GOOGLE_API_KEY[/dim]")
-    if has_openai:
-        options.append("openai")
-        labels.append("[2] openai  [green]✓ key set[/green]")
-    else:
-        options.append("openai")
-        labels.append("[2] openai  [dim]needs OPENAI_API_KEY[/dim]")
-    options.append("skip")
-    labels.append("[3] skip    [dim]no chat/search[/dim]")
-
-    for label in labels:
-        console.print(f"  {label}")
-    console.print()
-
-    default = "1" if (has_gemini or has_openai) else "3"
-    raw = click.prompt("  Select", default=default).strip()
-
-    # Map number or name to option.
-    choice = (
-        raw
-        if raw in options
-        else (options[int(raw) - 1] if raw.isdigit() and 1 <= int(raw) <= len(options) else "skip")
-    )
-
-    if choice == "skip":
-        console.print("[dim]Skipping embedder — chat and search will be unavailable.[/dim]\n")
-        return
-
-    os.environ["REPOWISE_EMBEDDER"] = choice
-
-    # Ensure the API key is present; prompt if missing.
-    api_key = _get_or_prompt_api_key(choice)
-    if api_key:
-        _set_api_key_env(choice, api_key)
-
-    # Save choice (and key) to the central app config for future runs.
-    _save_global_embedder(choice, api_key)
-    console.print()
+    # No embedder configured — server defaults to MockEmbedder with full-text search fallback.
+    # Chat works via the configured LLM (xAI); semantic search degrades gracefully to FTS.
 
 
 def _get_or_prompt_api_key(embedder: str) -> str:
@@ -282,21 +230,27 @@ def _build_local_web(web_dir: Path, npm: str) -> bool:
     try:
         # Install deps if needed
         if not (web_dir / "node_modules").exists():
-            subprocess.run(
+            result = subprocess.run(
                 [npm, "install"],
                 cwd=str(web_dir),
-                check=True,
                 capture_output=True,
+                text=True,
             )
+            if result.returncode != 0:
+                console.print(f"[yellow]npm install failed:[/yellow]\n{result.stderr or result.stdout}")
+                return False
         # Build
-        subprocess.run(
+        result = subprocess.run(
             [npm, "run", "build"],
             cwd=str(web_dir),
-            check=True,
             capture_output=True,
+            text=True,
         )
+        if result.returncode != 0:
+            console.print(f"[yellow]npm run build failed:[/yellow]\n{result.stderr or result.stdout}")
+            return False
         return True
-    except subprocess.CalledProcessError as exc:
+    except Exception as exc:
         console.print(f"[yellow]Web UI build failed: {exc}[/yellow]")
         return False
 
@@ -306,29 +260,28 @@ def _start_frontend(node: str, backend_port: int, frontend_port: int) -> subproc
     env = {
         **os.environ,
         "REPOWISE_API_URL": f"http://localhost:{backend_port}",
-        "HOSTNAME": "0.0.0.0",
+        "HOSTNAME": "127.0.0.1",
         "PORT": str(frontend_port),
     }
 
     local_web = _find_local_web()
     if local_web:
         standalone_dir = local_web / ".next" / "standalone"
-        # Next.js standalone in monorepos nests server under the package path
-        server_js = standalone_dir / "packages" / "web" / "server.js"
+        server_js = standalone_dir / "server.js"
         if server_js.exists():
             # Copy static files into standalone (Next.js requirement)
             static_src = local_web / ".next" / "static"
-            static_dst = standalone_dir / "packages" / "web" / ".next" / "static"
+            static_dst = standalone_dir / ".next" / "static"
             if static_src.exists() and not static_dst.exists():
                 shutil.copytree(str(static_src), str(static_dst))
             public_src = local_web / "public"
-            public_dst = standalone_dir / "packages" / "web" / "public"
+            public_dst = standalone_dir / "public"
             if public_src.exists() and not public_dst.exists():
                 shutil.copytree(str(public_src), str(public_dst))
 
             return subprocess.Popen(
                 [node, str(server_js)],
-                cwd=str(standalone_dir / "packages" / "web"),
+                cwd=str(standalone_dir),
                 env=env,
             )
 
@@ -395,7 +348,7 @@ def serve_command(path: str | None, port: int, host: str, workers: int, ui_port:
         else:
             ready = False
 
-            standalone = local_web / ".next" / "standalone" / "packages" / "web" / "server.js"
+            standalone = local_web / ".next" / "standalone" / "server.js"
             if standalone.exists():
                 ready = True
 
@@ -405,7 +358,7 @@ def serve_command(path: str | None, port: int, host: str, workers: int, ui_port:
             if ready:
                 frontend_proc = _start_frontend(node, port, ui_port)
                 if frontend_proc:
-                    console.print(f"[green]Web UI starting on http://localhost:{ui_port}[/green]")
+                    console.print(f"[green]Web UI starting on http://127.0.0.1:{ui_port}[/green]")
                 else:
                     console.print("[yellow]Could not start web UI — running API only.[/yellow]")
             else:

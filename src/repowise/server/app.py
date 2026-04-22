@@ -73,7 +73,7 @@ def _build_embedder():
 
         model = os.environ.get("REPOWISE_EMBEDDING_MODEL", "text-embedding-3-small")
         return OpenAIEmbedder(model=model)
-    logger.warning("embedder.mock_active — set REPOWISE_EMBEDDER=gemini or openai for real RAG")
+    logger.debug("embedder.mock_active — using full-text search fallback")
     return MockEmbedder()
 
 

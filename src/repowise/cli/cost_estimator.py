@@ -100,7 +100,13 @@ _TOKEN_HEURISTICS: dict[str, tuple[int, int]] = {
 # Cost per 1K tokens (input, output).
 # Exact model names are checked first; prefix fallbacks catch unknown variants.
 _COST_TABLE_EXACT: dict[str, tuple[float, float]] = {
-    # OpenAI GPT-5.4 family (prices per MTok → divide by 1000 for per-1K)
+    # xAI Grok — https://docs.x.ai/docs/models (prices per MTok → divide by 1000 for per-1K)
+    "grok-4-1-fast-reasoning": (0.0002, 0.0005),  # $0.20/$0.50 per MTok
+    "grok-4-1-fast-non-reasoning": (0.0002, 0.0005),  # $0.20/$0.50 per MTok
+    "grok-4.20-0309-reasoning": (0.002, 0.006),  # $2.00/$6.00 per MTok
+    "grok-4.20-0309-non-reasoning": (0.002, 0.006),  # $2.00/$6.00 per MTok
+    "grok-4.20-multi-agent-0309": (0.002, 0.006),  # $2.00/$6.00 per MTok
+    # OpenAI GPT-5.4 family
     "gpt-5.4": (0.0025, 0.015),  # $2.50/$15 per MTok
     "gpt-5.4-mini": (0.00075, 0.0045),  # $0.75/$4.50 per MTok
     "gpt-5.4-nano": (0.0002, 0.00125),  # $0.20/$1.25 per MTok
@@ -116,6 +122,9 @@ _COST_TABLE_EXACT: dict[str, tuple[float, float]] = {
 
 # Prefix fallbacks for unknown model variants
 _COST_TABLE_PREFIX: dict[str, tuple[float, float]] = {
+    "grok-4.20": (0.002, 0.006),
+    "grok-4": (0.0002, 0.0005),
+    "grok": (0.0002, 0.0005),
     "gpt-5.4-nano": (0.0002, 0.00125),
     "gpt-5.4-mini": (0.00075, 0.0045),
     "gpt-5.4": (0.0025, 0.015),

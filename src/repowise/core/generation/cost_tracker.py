@@ -18,6 +18,12 @@ log = structlog.get_logger(__name__)
 # ---------------------------------------------------------------------------
 
 _PRICING: dict[str, dict[str, float]] = {
+    # xAI Grok — https://docs.x.ai/docs/models
+    "grok-4-1-fast-reasoning": {"input": 0.20, "output": 0.50},
+    "grok-4-1-fast-non-reasoning": {"input": 0.20, "output": 0.50},
+    "grok-4.20-0309-reasoning": {"input": 2.00, "output": 6.00},
+    "grok-4.20-0309-non-reasoning": {"input": 2.00, "output": 6.00},
+    "grok-4.20-multi-agent-0309": {"input": 2.00, "output": 6.00},
     # Anthropic
     "claude-opus-4-6": {"input": 15.0, "output": 75.0},
     "claude-sonnet-4-6": {"input": 3.0, "output": 15.0},
@@ -38,7 +44,7 @@ _PRICING: dict[str, dict[str, float]] = {
     "gemini-3-flash-preview": {"input": 0.075, "output": 0.30},
 }
 
-_FALLBACK_PRICING: dict[str, float] = {"input": 3.0, "output": 15.0}
+_FALLBACK_PRICING: dict[str, float] = {"input": 0.20, "output": 0.50}
 
 # Track which unknown models we've already warned about (per-process)
 _warned_models: set[str] = set()
