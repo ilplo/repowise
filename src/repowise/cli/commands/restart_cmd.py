@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import click
 
-from repowise.cli.commands.serve_cmd import (
+from repowise.cli.commands.start_cmd import (
     _build_local_web,
     _find_local_web,
     _npm_available,
@@ -52,4 +52,4 @@ def restart_command(
         ui_port=ui_port,
         no_ui=no_ui if no_ui else None,
     )
-    console.print("[green]repowise server restart requested.[/green]")
+    console.print("[green]Server restarted.[/green]")

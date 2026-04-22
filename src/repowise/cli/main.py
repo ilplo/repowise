@@ -16,7 +16,7 @@ from repowise.cli.commands.mcp_cmd import mcp_command
 from repowise.cli.commands.reindex_cmd import reindex_command
 from repowise.cli.commands.restart_cmd import restart_command
 from repowise.cli.commands.search_cmd import search_command
-from repowise.cli.commands.serve_cmd import serve_command
+from repowise.cli.commands.start_cmd import start_command
 from repowise.cli.commands.status_cmd import status_command
 from repowise.cli.commands.update_cmd import update_command
 from repowise.cli.commands.watch_cmd import watch_command
@@ -41,7 +41,7 @@ cli.add_command(export_command)
 cli.add_command(status_command)
 cli.add_command(doctor_command)
 cli.add_command(watch_command)
-cli.add_command(serve_command)
+cli.add_command(start_command)
 cli.add_command(mcp_command)
 cli.add_command(reindex_command)
 cli.add_command(restart_command)

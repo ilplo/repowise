@@ -33,11 +33,11 @@ class CliTests(unittest.TestCase):
         self.assertEqual(result.exit_code, 2)
         self.assertIn("Missing argument 'PATH'", result.output)
 
-    def test_serve_supports_running_without_target_repo_path(self) -> None:
+    def test_start_supports_running_without_target_repo_path(self) -> None:
         fake_uvicorn = types.SimpleNamespace(run=lambda *args, **kwargs: None)
-        with patch("repowise.cli.commands.serve_cmd._setup_embedder"):
+        with patch("repowise.cli.commands.start_cmd._setup_embedder"):
             with patch.dict(sys.modules, {"uvicorn": fake_uvicorn}):
-                result = self.runner.invoke(cli, ["serve", "--no-ui"])
+                result = self.runner.invoke(cli, ["start", "--no-ui"])
 
         self.assertEqual(result.exit_code, 0)
 

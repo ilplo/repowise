@@ -1,4 +1,4 @@
-"""``repowise serve`` — start the API server and web UI."""
+"""``repowise start`` — start the API server and web UI."""
 
 from __future__ import annotations
 
@@ -194,7 +194,7 @@ def restart_server(
         sys.executable,
         "-m",
         "repowise",
-        "serve",
+        "start",
         str(effective_repo_path),
         "--port",
         str(port if port is not None else state.get("port", 7337)),
@@ -324,7 +324,7 @@ def _start_frontend(node: str, backend_port: int, frontend_port: int) -> subproc
     return None
 
 
-@click.command("serve")
+@click.command("start")
 @click.argument("path", required=False, default=None)
 @click.option("--port", default=7337, type=int, help="API server port.")
 @click.option("--host", default="127.0.0.1", help="Host to bind to.")
@@ -333,7 +333,7 @@ def _start_frontend(node: str, backend_port: int, frontend_port: int) -> subproc
 @click.option("--no-ui", is_flag=True, help="Start API server only, skip the web UI.")
 @click.option("--mcp-port", default=7338, type=int, help="MCP SSE server port.")
 @click.option("--no-mcp", is_flag=True, help="Skip the MCP SSE server.")
-def serve_command(path: str | None, port: int, host: str, workers: int, ui_port: int, no_ui: bool, mcp_port: int, no_mcp: bool) -> None:
+def start_command(path: str | None, port: int, host: str, workers: int, ui_port: int, no_ui: bool, mcp_port: int, no_mcp: bool) -> None:
     """Start the repowise API server, web UI, and MCP SSE server.
 
     Use --no-ui to skip the web UI, --no-mcp to skip the MCP server.
