@@ -102,6 +102,7 @@ class Page(Base):
     page_type: Mapped[str] = mapped_column(String(64), nullable=False)
     title: Mapped[str] = mapped_column(Text, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     target_path: Mapped[str] = mapped_column(Text, nullable=False)
     source_hash: Mapped[str] = mapped_column(String(64), nullable=False)
     model_name: Mapped[str] = mapped_column(String(128), nullable=False)
@@ -115,6 +116,7 @@ class Page(Base):
     freshness_status: Mapped[str] = mapped_column(String(32), nullable=False, default="fresh")
     # JSON-encoded dict (metadata is a reserved SQLAlchemy attribute name)
     metadata_json: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    human_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 

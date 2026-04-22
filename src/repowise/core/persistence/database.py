@@ -99,6 +99,22 @@ async def _ensure_sqlite_graph_edges_schema(conn) -> None:
             await conn.execute(text(statement))
 
 
+async def _ensure_sqlite_wiki_pages_schema(conn) -> None:
+    """Backfill columns added to wiki_pages after initial schema shipped."""
+    result = await conn.execute(text("PRAGMA table_info(wiki_pages)"))
+    existing_columns = {row[1] for row in result.fetchall()}
+    if not existing_columns:
+        return
+
+    add_column_statements = {
+        "summary": "ALTER TABLE wiki_pages ADD COLUMN summary TEXT",
+        "human_notes": "ALTER TABLE wiki_pages ADD COLUMN human_notes TEXT",
+    }
+    for column_name, statement in add_column_statements.items():
+        if column_name not in existing_columns:
+            await conn.execute(text(statement))
+
+
 async def _ensure_sqlite_indexes(conn) -> None:
     """Create runtime-managed indexes that ``create_all()`` cannot backfill."""
     statements = (
@@ -255,6 +271,7 @@ async def init_db(engine: AsyncEngine) -> None:
             await _ensure_sqlite_graph_nodes_schema(conn)
             await _ensure_sqlite_graph_edges_schema(conn)
             await _ensure_sqlite_indexes(conn)
+            await _ensure_sqlite_wiki_pages_schema(conn)
             await conn.execute(
                 text(
                     "CREATE VIRTUAL TABLE IF NOT EXISTS page_fts "
