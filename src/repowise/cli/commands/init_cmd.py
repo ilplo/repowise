@@ -44,6 +44,23 @@ def _resolve_embedder(embedder_flag: str | None) -> str:
     return "mock"
 
 
+def _start_mcp_daemon(repo_path: Path) -> None:
+    """Start the MCP SSE server as a detached background process."""
+    import subprocess
+    import sys
+
+    try:
+        subprocess.Popen(
+            [sys.executable, "-m", "repowise", "mcp", str(repo_path), "--transport", "sse"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+    except Exception:
+        pass  # Non-fatal — user can start it manually
+
+
 def _register_mcp_with_claude(console_obj: Any, repo_path: Path) -> None:
     """Register the repowise MCP server with Claude Desktop and Claude Code."""
     from repowise.cli.mcp_config import register_with_claude_code, register_with_claude_desktop
@@ -619,6 +636,7 @@ def init_command(
     save_mcp_config(repo_path)
     save_root_mcp_config(repo_path)
     _register_mcp_with_claude(console, repo_path)
+    _start_mcp_daemon(repo_path)
 
     _maybe_generate_claude_md(console, repo_path, no_claude_md=no_claude_md)
 

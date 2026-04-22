@@ -96,6 +96,8 @@ def _write_server_state(
     workers: int,
     ui_port: int,
     no_ui: bool,
+    mcp_port: int,
+    no_mcp: bool,
 ) -> None:
     ensure_app_data_dir()
     state_path = get_server_state_path()
@@ -109,6 +111,8 @@ def _write_server_state(
                 "workers": workers,
                 "ui_port": ui_port,
                 "no_ui": no_ui,
+                "mcp_port": mcp_port,
+                "no_mcp": no_mcp,
                 "started_at": time.time(),
             },
             indent=2,
@@ -165,6 +169,8 @@ def restart_server(
     workers: int | None = None,
     ui_port: int | None = None,
     no_ui: bool | None = None,
+    mcp_port: int | None = None,
+    no_mcp: bool | None = None,
 ) -> None:
     state = load_server_state() or {}
     effective_repo_path = repo_path or (Path(state["repo_path"]) if state.get("repo_path") else None)
@@ -188,10 +194,15 @@ def restart_server(
         str(workers if workers is not None else state.get("workers", 1)),
         "--ui-port",
         str(ui_port if ui_port is not None else state.get("ui_port", 3000)),
+        "--mcp-port",
+        str(mcp_port if mcp_port is not None else state.get("mcp_port", 7338)),
     ]
     effective_no_ui = no_ui if no_ui is not None else bool(state.get("no_ui", False))
     if effective_no_ui:
         command.append("--no-ui")
+    effective_no_mcp = no_mcp if no_mcp is not None else bool(state.get("no_mcp", False))
+    if effective_no_mcp:
+        command.append("--no-mcp")
 
     ensure_app_data_dir()
     log_path = get_server_log_path()
@@ -255,6 +266,19 @@ def _build_local_web(web_dir: Path, npm: str) -> bool:
         return False
 
 
+def _start_mcp(repo_path: Path, mcp_port: int) -> subprocess.Popen | None:
+    try:
+        return subprocess.Popen(
+            [sys.executable, "-m", "repowise", "mcp", str(repo_path), "--transport", "sse", "--port", str(mcp_port)],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            stdin=subprocess.DEVNULL,
+        )
+    except Exception as exc:
+        console.print(f"[yellow]Could not start MCP server: {exc}[/yellow]")
+        return None
+
+
 def _start_frontend(node: str, backend_port: int, frontend_port: int) -> subprocess.Popen | None:
     """Start the Next.js frontend server. Returns the process or None."""
     env = {
@@ -295,11 +319,12 @@ def _start_frontend(node: str, backend_port: int, frontend_port: int) -> subproc
 @click.option("--workers", default=1, type=int, help="Number of uvicorn workers.")
 @click.option("--ui-port", default=3000, type=int, help="Web UI port.")
 @click.option("--no-ui", is_flag=True, help="Start API server only, skip the web UI.")
-def serve_command(path: str | None, port: int, host: str, workers: int, ui_port: int, no_ui: bool) -> None:
-    """Start the repowise server with the web UI.
+@click.option("--mcp-port", default=7338, type=int, help="MCP SSE server port.")
+@click.option("--no-mcp", is_flag=True, help="Skip the MCP SSE server.")
+def serve_command(path: str | None, port: int, host: str, workers: int, ui_port: int, no_ui: bool, mcp_port: int, no_mcp: bool) -> None:
+    """Start the repowise API server, web UI, and MCP SSE server.
 
-    Starts the API backend and automatically launches the repo-local web frontend.
-    Use --no-ui to start only the API server.
+    Use --no-ui to skip the web UI, --no-mcp to skip the MCP server.
     """
     try:
         import uvicorn
@@ -326,7 +351,15 @@ def serve_command(path: str | None, port: int, host: str, workers: int, ui_port:
         workers=workers,
         ui_port=ui_port,
         no_ui=no_ui,
+        mcp_port=mcp_port,
+        no_mcp=no_mcp,
     )
+
+    mcp_proc: subprocess.Popen | None = None
+    if not no_mcp:
+        mcp_proc = _start_mcp(repo_path or Path.cwd(), mcp_port)
+        if mcp_proc:
+            console.print(f"[green]MCP SSE server starting on http://127.0.0.1:{mcp_port}/sse[/green]")
 
     frontend_proc: subprocess.Popen | None = None
     local_web = _find_local_web()
@@ -379,6 +412,9 @@ def serve_command(path: str | None, port: int, host: str, workers: int, ui_port:
         )
     finally:
         clear_server_state()
+        if mcp_proc:
+            mcp_proc.terminate()
+            mcp_proc.wait(timeout=5)
         if frontend_proc:
             frontend_proc.terminate()
             frontend_proc.wait(timeout=5)
