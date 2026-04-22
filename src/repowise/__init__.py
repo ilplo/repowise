@@ -1,0 +1,1 @@
+"""Repowise standalone package."""

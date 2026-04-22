@@ -1,0 +1,34 @@
+import { notFound } from "next/navigation";
+import { listDecisions } from "@/lib/api/decisions";
+import { DecisionsTable } from "@/components/decisions/decisions-table";
+
+export const revalidate = 30;
+
+interface Props {
+  params: Promise<{ id: string }>;
+}
+
+export default async function DecisionsPage({ params }: Props) {
+  const { id: repoId } = await params;
+
+  let decisions;
+  try {
+    decisions = await listDecisions(repoId, { include_proposed: true, limit: 100 });
+  } catch {
+    notFound();
+  }
+
+  return (
+    <div className="space-y-6 p-6">
+      <div>
+        <h1 className="text-2xl font-semibold text-[var(--color-text-primary)]">
+          Architectural Decisions
+        </h1>
+        <p className="mt-1 text-sm text-[var(--color-text-tertiary)]">
+          Why the codebase is built the way it is — constraints, tradeoffs, and rejected alternatives.
+        </p>
+      </div>
+      <DecisionsTable repoId={repoId} initialData={decisions} />
+    </div>
+  );
+}

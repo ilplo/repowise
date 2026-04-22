@@ -1,0 +1,2 @@
+[console_scripts]
+repowise = repowise.cli.main:cli

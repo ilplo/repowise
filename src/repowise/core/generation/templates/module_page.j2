@@ -1,0 +1,39 @@
+You are documenting the module at `{{ ctx.module_path }}` (language: {{ ctx.language }}).
+
+## Module Overview
+- **Path**: `{{ ctx.module_path }}`
+- **Language**: {{ ctx.language }}
+- **Total symbols**: {{ ctx.total_symbols }}
+- **Public symbols**: {{ ctx.public_symbols }}
+- **Mean PageRank**: {{ "%.4f"|format(ctx.pagerank_mean) }}
+
+## Entry Points
+{% for ep in ctx.entry_points %}
+- `{{ ep }}`
+{% endfor %}
+
+## Dependencies (modules this imports)
+{% for dep in ctx.dependencies %}
+- `{{ dep }}`
+{% endfor %}
+
+## Dependents (modules that import this)
+{% for dep in ctx.dependents %}
+- `{{ dep }}`
+{% endfor %}
+
+## Files in Module
+{% for f in ctx.files %}
+- `{{ f }}`
+{% endfor %}
+
+{% if module_git_summary is defined and module_git_summary %}
+## Team ownership
+{% for pkg_owner in module_git_summary.top_owners %}
+- **{{ pkg_owner.file_count }} files** primarily maintained by {{ pkg_owner.name }}
+{% endfor %}
+Most active recently: `{{ module_git_summary.most_active_file }}`
+({{ module_git_summary.most_active_commits_90d }} commits in 90 days)
+{% endif %}
+
+Generate a complete wiki page following the sections above.

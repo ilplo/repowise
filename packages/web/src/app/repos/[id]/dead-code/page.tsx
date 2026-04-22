@@ -1,0 +1,79 @@
+"use client";
+
+import { useState } from "react";
+import useSWR from "swr";
+import { useParams } from "next/navigation";
+import { Trash2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { SummaryBar } from "@/components/dead-code/summary-bar";
+import { FindingsTable } from "@/components/dead-code/findings-table";
+import { Skeleton } from "@/components/ui/skeleton";
+import { getDeadCodeSummary, analyzeDeadCode } from "@/lib/api/dead-code";
+import type { DeadCodeSummaryResponse } from "@/lib/api/types";
+
+export default function DeadCodePage() {
+  const params = useParams<{ id: string }>();
+  const id = params.id;
+  const [analyzing, setAnalyzing] = useState(false);
+  const [analyzeMsg, setAnalyzeMsg] = useState("");
+
+  const { data: summary, isLoading: loadingSummary } = useSWR<DeadCodeSummaryResponse>(
+    `dead-code-summary:${id}`,
+    () => getDeadCodeSummary(id),
+    { revalidateOnFocus: false },
+  );
+
+  const handleAnalyze = async () => {
+    setAnalyzing(true);
+    setAnalyzeMsg("");
+    try {
+      await analyzeDeadCode(id);
+      setAnalyzeMsg("Analysis started — results will appear shortly.");
+    } catch {
+      setAnalyzeMsg("Failed to start analysis.");
+    } finally {
+      setAnalyzing(false);
+    }
+  };
+
+  return (
+    <div className="p-4 sm:p-6 space-y-6 max-w-[1600px]">
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="text-xl font-semibold text-[var(--color-text-primary)] mb-1 flex items-center gap-2">
+            <Trash2 className="h-5 w-5 text-red-500" />
+            Dead Code
+          </h1>
+          <p className="text-sm text-[var(--color-text-secondary)]">
+            Unused files, exports, and zombie packages.
+          </p>
+        </div>
+        <div className="flex items-center gap-3">
+          {analyzeMsg && (
+            <span className="text-xs text-green-500">{analyzeMsg}</span>
+          )}
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleAnalyze}
+            disabled={analyzing}
+          >
+            {analyzing ? "Starting…" : "Analyze"}
+          </Button>
+        </div>
+      </div>
+
+      {loadingSummary ? (
+        <div className="grid grid-cols-4 gap-3">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-24 w-full rounded-lg" />
+          ))}
+        </div>
+      ) : summary ? (
+        <SummaryBar summary={summary} />
+      ) : null}
+
+      <FindingsTable repoId={id} />
+    </div>
+  );
+}

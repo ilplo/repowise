@@ -1,0 +1,239 @@
+"""FastAPI application factory for the repowise server.
+
+The ``create_app()`` function builds and configures the FastAPI instance.
+The ``lifespan`` context manager handles startup (DB, FTS, vector store,
+scheduler) and shutdown (cleanup).
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+from collections.abc import AsyncGenerator
+from contextlib import asynccontextmanager
+
+from repowise.app_runtime import get_repo_lancedb_dir
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+
+from fastapi import FastAPI, Request
+from repowise.core.persistence.database import (
+    create_engine,
+    create_session_factory,
+    get_session,
+    init_db,
+    resolve_db_url,
+)
+from repowise.core.persistence.search import FullTextSearch
+from repowise.core.persistence.vector_store import InMemoryVectorStore
+from repowise.core.providers.embedding.base import MockEmbedder
+from repowise.server import __version__
+from repowise.server.routers import (
+    blast_radius,
+    chat,
+    claude_md,
+    costs,
+    dead_code,
+    decisions,
+    git,
+    graph,
+    health,
+    jobs,
+    knowledge_map,
+    pages,
+    providers,
+    repos,
+    search,
+    security,
+    symbols,
+    webhooks,
+)
+from repowise.server.scheduler import setup_scheduler
+from repowise.target_repo import TargetRepoResolutionError, resolve_target_repo_paths
+
+logger = logging.getLogger(__name__)
+
+
+def _build_embedder():
+    """Build an embedder from REPOWISE_EMBEDDER env var (default: mock).
+
+    Supported values:
+        mock    — deterministic 8-dim SHA-256 embedder (default, no API key needed)
+        gemini  — GeminiEmbedder via GEMINI_API_KEY / GOOGLE_API_KEY env var
+        openai  — OpenAIEmbedder via OPENAI_API_KEY env var
+    """
+    name = os.environ.get("REPOWISE_EMBEDDER", "mock").lower()
+    if name == "gemini":
+        from repowise.core.providers.embedding.gemini import GeminiEmbedder
+
+        dims = int(os.environ.get("REPOWISE_EMBEDDING_DIMS", "768"))
+        return GeminiEmbedder(output_dimensionality=dims)
+    if name == "openai":
+        from repowise.core.providers.embedding.openai import OpenAIEmbedder
+
+        model = os.environ.get("REPOWISE_EMBEDDING_MODEL", "text-embedding-3-small")
+        return OpenAIEmbedder(model=model)
+    logger.warning("embedder.mock_active — set REPOWISE_EMBEDDER=gemini or openai for real RAG")
+    return MockEmbedder()
+
+
+def _resolve_target_runtime(
+    target_repo_path: str | None,
+    configured_db_url: str | None,
+):
+    """Resolve the runtime target repo and database URL.
+
+    An explicit target repo path wins over any configured DB URL override.
+    """
+    if target_repo_path:
+        try:
+            target_paths = resolve_target_repo_paths(target_repo_path)
+        except TargetRepoResolutionError as error:
+            raise RuntimeError(str(error)) from error
+        return target_paths, resolve_db_url()
+
+    if configured_db_url is not None:
+        return None, configured_db_url
+
+    return None, resolve_db_url()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """Startup: create DB engine, session factory, FTS, vector store, scheduler.
+    Shutdown: dispose engine, stop scheduler, close vector store.
+    """
+    target_paths, db_url = _resolve_target_runtime(
+        target_repo_path=os.environ.get("REPOWISE_TARGET_REPO"),
+        configured_db_url=os.environ.get("REPOWISE_DB_URL")
+        or os.environ.get("REPOWISE_DATABASE_URL"),
+    )
+
+    engine = create_engine(db_url)
+    await init_db(engine)
+    session_factory = create_session_factory(engine)
+
+    # Reset any jobs left in "running" state from a previous server instance
+    # (crash or restart) — they can never complete now.
+    # Note: with multi-worker deployments this is a best-effort race; the
+    # try/except prevents a SQLite lock error from crashing startup.
+    try:
+        from sqlalchemy import update as sa_update
+        from repowise.core.persistence.models import GenerationJob
+        from datetime import datetime, UTC as _UTC
+
+        async with get_session(session_factory) as session:
+            stale_result = await session.execute(
+                sa_update(GenerationJob)
+                .where(GenerationJob.status == "running")
+                .values(
+                    status="failed",
+                    error_message="Server restarted — job interrupted",
+                    finished_at=datetime.now(_UTC),
+                )
+            )
+            rowcount = getattr(stale_result, "rowcount", 0)
+            if rowcount:
+                logger.warning("reset_stale_jobs", extra={"count": rowcount})
+    except Exception as exc:
+        logger.warning("stale_job_reset_failed", extra={"error": str(exc)})
+
+    # Full-text search
+    fts = FullTextSearch(engine)
+    await fts.ensure_index()
+
+    # Vector store (prefer repo-scoped LanceDB when available)
+    embedder = _build_embedder()
+    vector_store = InMemoryVectorStore(embedder=embedder)
+    if target_paths is not None:
+        try:
+            from repowise.core.persistence.vector_store import LanceDBVectorStore
+
+            lance_dir = get_repo_lancedb_dir(target_paths.repo_path)
+            lance_dir.mkdir(parents=True, exist_ok=True)
+            vector_store = LanceDBVectorStore(str(lance_dir), embedder=embedder)
+            await vector_store._ensure_connected()
+        except Exception:
+            logger.warning("vector_store_fallback_inmemory", exc_info=True)
+
+    # Background scheduler
+    scheduler = setup_scheduler(session_factory)
+    scheduler.start()
+
+    # Store on app state
+    app.state.engine = engine
+    app.state.session_factory = session_factory
+    app.state.fts = fts
+    app.state.vector_store = vector_store
+    app.state.scheduler = scheduler
+    app.state.target_repo_path = target_paths.repo_path if target_paths else None
+    background_tasks: set[object] = set()
+    app.state.background_tasks = background_tasks  # Strong refs to prevent GC of asyncio tasks
+
+    # Initialize chat tool state (bridges FastAPI state to MCP tool globals)
+    from repowise.server.chat_tools import init_tool_state
+
+    init_tool_state(
+        session_factory=session_factory,
+        fts=fts,
+        vector_store=vector_store,
+    )
+
+    logger.info("repowise_server_started", extra={"version": __version__})
+    yield
+
+    # Shutdown
+    scheduler.shutdown(wait=False)
+    await vector_store.close()
+    await engine.dispose()
+    logger.info("repowise_server_stopped")
+
+
+def create_app() -> FastAPI:
+    """Build and return the configured FastAPI application."""
+    app = FastAPI(
+        title="repowise API",
+        description="REST API for repowise — codebase documentation engine",
+        version=__version__,
+        lifespan=lifespan,
+    )
+
+    # CORS — allow all origins for local development
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+
+    # Exception handlers
+    @app.exception_handler(LookupError)
+    async def not_found_handler(request: Request, exc: LookupError) -> JSONResponse:
+        return JSONResponse(status_code=404, content={"detail": str(exc)})
+
+    @app.exception_handler(ValueError)
+    async def bad_request_handler(request: Request, exc: ValueError) -> JSONResponse:
+        return JSONResponse(status_code=400, content={"detail": str(exc)})
+
+    # Include routers
+    app.include_router(health.router)
+    app.include_router(repos.router)
+    app.include_router(pages.router)
+    app.include_router(search.router)
+    app.include_router(jobs.router)
+    app.include_router(symbols.router)
+    app.include_router(graph.router)
+    app.include_router(webhooks.router)
+    app.include_router(git.router)
+    app.include_router(dead_code.router)
+    app.include_router(claude_md.router)
+    app.include_router(decisions.router)
+    app.include_router(chat.router)
+    app.include_router(providers.router)
+    app.include_router(costs.router)
+    app.include_router(security.router)
+    app.include_router(blast_radius.router)
+    app.include_router(knowledge_map.router)
+
+    return app

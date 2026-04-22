@@ -1,0 +1,227 @@
+"""FastMCP server instance, lifespan, and entry points."""
+
+from __future__ import annotations
+
+import asyncio
+import contextlib
+import os
+from contextlib import asynccontextmanager
+from typing import Any
+
+from mcp.server.fastmcp import FastMCP
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from repowise.app_runtime import get_repo_lancedb_dir
+from repowise.core.persistence.database import (
+    get_configured_db_url,
+    init_db,
+    resolve_db_url,
+)
+from repowise.core.persistence.search import FullTextSearch
+from repowise.core.persistence.vector_store import InMemoryVectorStore
+from repowise.core.providers.embedding.base import MockEmbedder
+from repowise.server.mcp_server import _state
+from repowise.target_repo import TargetRepoResolutionError, resolve_target_repo_paths
+
+_log = __import__("logging").getLogger("repowise.mcp")
+
+
+def _resolve_embedder():
+    """Resolve embedder from env var or the central app config."""
+    name = os.environ.get("REPOWISE_EMBEDDER", "").lower()
+    if not name and _state._repo_path:
+        try:
+            from repowise.cli.helpers import load_config
+
+            cfg = load_config(resolve_target_repo_paths(_state._repo_path).repo_path)
+            name = (cfg.get("embedder") or "").lower()
+        except Exception:
+            _log.debug("Failed to read embedder from repository settings", exc_info=True)
+    if name == "gemini":
+        try:
+            from repowise.core.providers.embedding.gemini import GeminiEmbedder
+
+            dims = int(os.environ.get("REPOWISE_EMBEDDING_DIMS", "768"))
+            return GeminiEmbedder(output_dimensionality=dims)
+        except Exception:
+            _log.warning("Failed to initialise Gemini embedder — falling back to mock", exc_info=True)
+    if name == "openai":
+        try:
+            from repowise.core.providers.embedding.openai import OpenAIEmbedder
+
+            model = os.environ.get("REPOWISE_EMBEDDING_MODEL", "text-embedding-3-small")
+            return OpenAIEmbedder(model=model)
+        except Exception:
+            _log.warning("Failed to initialise OpenAI embedder — falling back to mock", exc_info=True)
+    return MockEmbedder()
+
+
+def _resolve_mcp_runtime_target(
+    repo_path: str | None,
+    configured_db_url: str | None,
+):
+    """Resolve the MCP runtime target and effective DB URL.
+
+    An explicit repo path wins over any configured DB URL override.
+    """
+    if repo_path:
+        try:
+            target_paths = resolve_target_repo_paths(repo_path)
+        except TargetRepoResolutionError as error:
+            raise RuntimeError(str(error)) from error
+        return target_paths, resolve_db_url()
+
+    if configured_db_url is not None:
+        return None, configured_db_url
+
+    return None, resolve_db_url()
+
+
+async def _load_vector_stores(repo_path: str | None) -> None:
+    """Load embedder + vector stores in the background.
+
+    Runs as an asyncio.Task started from _lifespan so the MCP server
+    starts accepting connections immediately.  tool_search awaits
+    _state._vector_store_ready before performing a search.
+
+    We pre-warm the LanceDB connection here so the first search() call
+    never hits a cold import or connection.  Specifically:
+
+    1. `import lancedb` is deferred to asyncio.to_thread — the first-time
+       import loads Rust/Arrow DLLs which can block the event loop for
+       tens of seconds on Windows (AV scanning).  Running it in a thread
+       keeps the event loop responsive.
+    2. `_ensure_connected()` is called here so LanceDB opens the table
+       before the first search.  Subsequent search() calls see
+       self._db is not None and skip the blocking import entirely.
+    """
+    import asyncio as _asyncio
+
+    try:
+        embedder = _resolve_embedder()
+        vector_store: Any = InMemoryVectorStore(embedder=embedder)
+        decision_store: Any = InMemoryVectorStore(embedder=embedder)
+
+        try:
+            # Step 1 — import lancedb in a thread to keep event loop free.
+            await _asyncio.to_thread(__import__, "lancedb")
+
+            from repowise.core.persistence.vector_store import LanceDBVectorStore
+
+            if repo_path:
+                lance_dir = get_repo_lancedb_dir(repo_path)
+                lance_dir.mkdir(parents=True, exist_ok=True)
+                vs = LanceDBVectorStore(str(lance_dir), embedder=embedder)
+                ds = LanceDBVectorStore(
+                    str(lance_dir), embedder=embedder, table_name="decision_records"
+                )
+                # Step 2 — pre-connect so first search() is instant.
+                await vs._ensure_connected()
+                await ds._ensure_connected()
+                vector_store = vs
+                decision_store = ds
+        except ImportError:
+            pass
+        except Exception:
+            _log.warning("LanceDB pre-connect failed — using InMemory fallback")
+
+        _state._vector_store = vector_store
+        _state._decision_store = decision_store
+    except Exception:
+        _log.exception("Failed to load vector stores — falling back to MockEmbedder")
+        _state._vector_store = InMemoryVectorStore(embedder=MockEmbedder())
+        _state._decision_store = InMemoryVectorStore(embedder=MockEmbedder())
+    finally:
+        if _state._vector_store_ready is not None:
+            _state._vector_store_ready.set()
+
+
+@asynccontextmanager
+async def _lifespan(server: FastMCP):
+    """Initialize DB engine, session factory, and FTS synchronously on startup.
+
+    Vector store / LanceDB loading is deferred to a background asyncio task so
+    the server starts accepting tool calls immediately.  search_codebase awaits
+    _state._vector_store_ready before querying the vector store.
+    """
+    configured_db_url = get_configured_db_url()
+    target_paths, db_url = _resolve_mcp_runtime_target(_state._repo_path, configured_db_url)
+
+    connect_args: dict = {}
+    if db_url.startswith("sqlite"):
+        connect_args["check_same_thread"] = False
+
+    _log.info("repowise MCP: initialising database…")
+    engine = create_async_engine(db_url, connect_args=connect_args)
+    await init_db(engine)
+
+    _state._session_factory = async_sessionmaker(
+        engine, expire_on_commit=False, class_=AsyncSession
+    )
+
+    _state._fts = FullTextSearch(engine)
+    await _state._fts.ensure_index()
+
+    # Seed InMemory placeholders so tools that don't need vector search
+    # can start immediately, before the background load completes.
+    _state._vector_store = InMemoryVectorStore(embedder=MockEmbedder())
+    _state._decision_store = InMemoryVectorStore(embedder=MockEmbedder())
+
+    # Defer embedder resolution + LanceDB open to a background task so
+    # the server starts accepting connections without blocking on disk I/O.
+    _state._vector_store_ready = asyncio.Event()
+    _bg_task = asyncio.create_task(_load_vector_stores(_state._repo_path))
+    _log.info("repowise MCP: ready (vector stores loading in background)")
+
+    yield
+
+    _bg_task.cancel()
+    with contextlib.suppress(asyncio.CancelledError, Exception):
+        await _bg_task
+
+    await engine.dispose()
+    await _state._vector_store.close()
+    if _state._decision_store is not None:
+        await _state._decision_store.close()
+
+
+# ---------------------------------------------------------------------------
+# Create the MCP server
+# ---------------------------------------------------------------------------
+
+mcp = FastMCP(
+    "repowise",
+    instructions=(
+        "repowise is a codebase documentation engine. Use these tools to query "
+        "the wiki for architecture overviews, contextual docs on files/modules/"
+        "symbols, modification risk assessment, architectural decision rationale, "
+        "semantic search, dependency paths, dead code, and architecture diagrams."
+    ),
+    lifespan=_lifespan,
+)
+
+
+# ---------------------------------------------------------------------------
+# Server entry points
+# ---------------------------------------------------------------------------
+
+
+def create_mcp_server(repo_path: str | None = None) -> FastMCP:
+    """Create and return the MCP server instance, optionally scoped to a repo."""
+    _state._repo_path = repo_path
+    return mcp
+
+
+def run_mcp(
+    transport: str = "stdio",
+    repo_path: str | None = None,
+    port: int = 7338,
+) -> None:
+    """Run the MCP server with the specified transport."""
+    _state._repo_path = repo_path
+
+    if transport == "sse":
+        mcp.settings.port = port
+        mcp.run(transport="sse")
+    else:
+        mcp.run(transport="stdio")

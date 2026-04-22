@@ -1,0 +1,74 @@
+Metadata-Version: 2.4
+Name: repowise
+Version: 0.2.1
+Summary: Standalone source-of-truth repository for the Repowise application.
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: httpx<1,>=0.27
+Requires-Dist: tree-sitter<1,>=0.23
+Requires-Dist: tree-sitter-python<1,>=0.23
+Requires-Dist: tree-sitter-typescript<1,>=0.23
+Requires-Dist: tree-sitter-javascript<1,>=0.23
+Requires-Dist: tree-sitter-go<1,>=0.23
+Requires-Dist: tree-sitter-rust<1,>=0.23
+Requires-Dist: tree-sitter-java<1,>=0.23
+Requires-Dist: tree-sitter-cpp<1,>=0.23
+Requires-Dist: networkx<4,>=3.3
+Requires-Dist: scipy<2,>=1.11
+Requires-Dist: jinja2<4,>=3.1
+Requires-Dist: pathspec<1,>=0.12
+Requires-Dist: structlog<25,>=24
+Requires-Dist: sqlalchemy[asyncio]<3,>=2.0
+Requires-Dist: aiosqlite<1,>=0.20
+Requires-Dist: alembic<2,>=1.13
+Requires-Dist: pydantic<3,>=2.8
+Requires-Dist: tenacity<10,>=9
+Requires-Dist: gitpython<4,>=3.1
+Requires-Dist: pyyaml<7,>=6.0
+Requires-Dist: lancedb<1,>=0.12
+Requires-Dist: click<9,>=8.1
+Requires-Dist: rich<14,>=13
+Requires-Dist: watchdog<5,>=4
+Requires-Dist: fastapi<1,>=0.115
+Requires-Dist: uvicorn[standard]<1,>=0.32
+Requires-Dist: mcp<2,>=1.0
+Requires-Dist: apscheduler<4,>=3.10
+Requires-Dist: cryptography<44,>=43
+Requires-Dist: anthropic<1,>=0.40
+Requires-Dist: openai<3,>=1.50
+Requires-Dist: google-genai<2,>=1.0
+Requires-Dist: litellm<2,>=1.83.0
+Provides-Extra: postgres
+Requires-Dist: pgvector<1,>=0.3; extra == "postgres"
+Requires-Dist: asyncpg<1,>=0.29; extra == "postgres"
+Provides-Extra: dev
+Requires-Dist: pytest<9,>=8; extra == "dev"
+Requires-Dist: pytest-asyncio<1,>=0.23; extra == "dev"
+Requires-Dist: pytest-snapshot<1,>=0.9; extra == "dev"
+Requires-Dist: respx<1,>=0.21; extra == "dev"
+Requires-Dist: time-machine<3,>=2.14; extra == "dev"
+Requires-Dist: ruff<1,>=0.6; extra == "dev"
+Requires-Dist: mypy<2,>=1.11; extra == "dev"
+Requires-Dist: types-networkx<4,>=3.3; extra == "dev"
+Requires-Dist: build>=1.0; extra == "dev"
+
+# Repowise
+
+Standalone source-of-truth repository for the Repowise application.
+
+## Operating Model
+
+Target repos keep their own `.repowise/` folders for:
+- `wiki.db`
+- `state.json`
+- `config.yaml`
+- generated editor files
+
+Repowise is run against target repos explicitly, for example:
+
+```bash
+repowise init /path/to/target-repo
+```
+
+## Product Spec
+- `PROD_SPEC.md`

@@ -1,0 +1,38 @@
+You are generating a high-level overview for the repository `{{ ctx.repo_name }}`.
+
+## Repository Summary
+- **Name**: {{ ctx.repo_name }}
+- **Is monorepo**: {{ ctx.is_monorepo }}
+- **Total files**: {{ ctx.total_files }}
+- **Total lines of code**: {{ ctx.total_loc }}
+- **Circular dependency count**: {{ ctx.circular_dependency_count }}
+
+## Packages
+{% for pkg in ctx.packages %}
+- **{{ pkg.name }}** (`{{ pkg.path }}`, {{ pkg.language }})
+{% endfor %}
+
+## Language Distribution
+{% for lang, pct in ctx.language_distribution.items() %}
+- {{ lang }}: {{ "%.1f"|format(pct * 100) }}%
+{% endfor %}
+
+## Entry Points
+{% for ep in ctx.entry_points %}
+- `{{ ep }}`
+{% endfor %}
+
+## Top Files by PageRank
+{% for item in ctx.top_files_by_pagerank %}
+- `{{ item.path }}` (score: {{ "%.4f"|format(item.score) }})
+{% endfor %}
+
+{% if repo_git_summary is defined and repo_git_summary %}
+## Codebase health signals
+- **Hotspots:** {{ repo_git_summary.hotspot_count }} files are high-churn AND high-complexity
+- **Stable core:** {{ repo_git_summary.stable_count }} files unchanged in 90+ days
+- **Most changed (90d):** {{ repo_git_summary.top_churn_files[:3] | join(', ') }}
+- **Oldest file:** `{{ repo_git_summary.oldest_file }}` ({{ repo_git_summary.oldest_file_age_days }} days)
+{% endif %}
+
+Generate a complete wiki page following the sections above.
