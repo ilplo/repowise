@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Plus } from "lucide-react";
+import { toast } from "sonner";
 import { useSWRConfig } from "swr";
 import { createRepo } from "@/lib/api/repos";
 import { Button } from "@/components/ui/button";
@@ -54,6 +55,10 @@ export function AddRepoDialog({ variant = "default" }: Props) {
       await mutate("/api/repos");
       setOpen(false);
       reset();
+      toast.success(`Repository added — ${name.trim()}`, {
+        description: `MCP server is up · connect your editor with: repowise mcp ${localPath.trim()}`,
+        duration: 8000,
+      });
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to add repository");
     } finally {
