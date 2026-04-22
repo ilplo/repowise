@@ -206,8 +206,11 @@ def create_engine(
     kwargs: dict = {"echo": echo}
 
     if is_sqlite:
-        # SQLite requires check_same_thread=False for multi-threaded async use
-        kwargs["connect_args"] = {"check_same_thread": False}
+        # check_same_thread=False  — required for async use across threads
+        # timeout=30               — wait up to 30 s at the C level before
+        #                            raising "database is locked" (more reliable
+        #                            than PRAGMA busy_timeout with aiosqlite)
+        kwargs["connect_args"] = {"check_same_thread": False, "timeout": 30}
         if use_static_pool or ":memory:" in db_url:
             # StaticPool: all connect() calls return the same connection.
             # Mandatory for in-memory SQLite — without it each call gets a fresh DB.
