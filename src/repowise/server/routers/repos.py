@@ -19,7 +19,7 @@ from repowise.core.persistence.models import (
 )
 from repowise.server.deps import get_db_session, verify_api_key
 from repowise.server.job_executor import execute_job
-from repowise.server.schemas import RepoCreate, RepoResponse, RepoStatsResponse, RepoUpdate
+from repowise.server.schemas import JobResponse, RepoCreate, RepoResponse, RepoStatsResponse, RepoUpdate
 from repowise.target_repo import TargetRepoResolutionError, validate_target_repo_path
 
 logger = logging.getLogger(__name__)
@@ -183,7 +183,7 @@ async def get_repo_stats(
     )
 
 
-@router.post("/{repo_id}/sync", status_code=202)
+@router.post("/{repo_id}/sync", response_model=JobResponse, status_code=202)
 async def sync_repo(
     repo_id: str,
     request: Request,
@@ -219,10 +219,10 @@ async def sync_repo(
     # other connections, so flush() alone is not sufficient.
     await session.commit()
     _launch_job_task(request, job.id)
-    return {"job_id": job.id, "status": "accepted"}
+    return JobResponse.from_orm(job)
 
 
-@router.post("/{repo_id}/full-resync", status_code=202)
+@router.post("/{repo_id}/full-resync", response_model=JobResponse, status_code=202)
 async def full_resync(
     repo_id: str,
     request: Request,
@@ -248,6 +248,13 @@ async def full_resync(
     if active.scalar_one_or_none() is not None:
         raise HTTPException(status_code=409, detail="A sync job is already in progress for this repository")
 
+    try:
+        from repowise.server.provider_config import get_chat_provider_instance
+
+        get_chat_provider_instance()
+    except Exception as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
     job = await crud.upsert_generation_job(
         session,
         repository_id=repo_id,
@@ -258,7 +265,7 @@ async def full_resync(
     # see the job row.  See sync_repo comment for rationale.
     await session.commit()
     _launch_job_task(request, job.id)
-    return {"job_id": job.id, "status": "accepted"}
+    return JobResponse.from_orm(job)
 
 
 def _launch_job_task(request: Request, job_id: str) -> None:

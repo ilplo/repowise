@@ -182,6 +182,8 @@ async def execute_job(job_id: str, app_state: Any) -> None:
 
             llm_client = get_chat_provider_instance()
         except Exception as exc:
+            if is_full_resync:
+                raise RuntimeError(f"Full re-index requires an active provider: {exc}") from exc
             logger.warning("no_provider_configured", error=str(exc))
             # Continue without LLM — ingestion + analysis still work
 

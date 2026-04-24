@@ -44,6 +44,11 @@ export function ActiveJobBanner({ repoId }: ActiveJobBannerProps) {
 
   const mode = (job.config?.mode as string) ?? "sync";
   const label = mode === "full_resync" ? "Full Re-index" : "Sync";
+  const isFullResync = mode === "full_resync";
+  const generatedPages =
+    typeof job.config?.pages_generated === "number"
+      ? job.config.pages_generated
+      : job.completed_pages;
 
   const PHASE_LABELS: Record<number, string> = {
     0: "Indexing",
@@ -79,7 +84,9 @@ export function ActiveJobBanner({ repoId }: ActiveJobBannerProps) {
           {isRunning && job.total_pages > 0 && `${formatNumber(job.completed_pages)}/${formatNumber(job.total_pages)}`}
           {isDone && (
             <>
-              {formatNumber(job.completed_pages)} pages
+              {isFullResync
+                ? `${formatNumber(generatedPages)} pages`
+                : `${formatNumber(job.completed_pages)} files`}
               {job.config?.total_input_tokens && (
                 <> · {formatNumber(job.config.total_input_tokens as number)} tokens</>
               )}

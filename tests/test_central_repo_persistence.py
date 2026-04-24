@@ -18,11 +18,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 from repowise.cli.helpers import _load_repo_settings_async, _load_repo_state_async
 from repowise.cli.main import cli
 from repowise.core.persistence import create_engine, create_session_factory, get_session, init_db
-from repowise.core.persistence.crud import upsert_repository
+from repowise.core.persistence.crud import get_generation_job, upsert_generation_job, upsert_repository
 from repowise.core.persistence.models import Page
 from repowise.core.persistence.page_ids import make_storage_page_id
-from repowise.server.routers.repos import create_repo, list_repos, sync_repo
+from repowise.server.routers.repos import create_repo, full_resync, list_repos, sync_repo
 from repowise.server.schemas import RepoCreate
+from repowise.server.job_executor import execute_job
 
 
 class CentralRepoPersistenceTests(unittest.IsolatedAsyncioTestCase):
@@ -93,6 +94,89 @@ class CentralRepoPersistenceTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(ctx.exception.status_code, 409)
         self.assertIn("does not exist", str(ctx.exception.detail))
+
+    async def test_sync_repo_returns_job_contract_with_id(self) -> None:
+        async with get_session(self.session_factory) as session:
+            created = await create_repo(
+                RepoCreate(name="target", local_path=str(self.repo_path)),
+                session=session,
+            )
+
+        request = types.SimpleNamespace()
+        with patch("repowise.server.routers.repos._launch_job_task") as launch:
+            async with get_session(self.session_factory) as session:
+                job = await sync_repo(created.id, request=request, session=session)
+
+        self.assertEqual(job.repository_id, created.id)
+        self.assertEqual(job.status, "pending")
+        self.assertTrue(job.id)
+        launch.assert_called_once_with(request, job.id)
+
+    async def test_full_resync_rejects_missing_provider_before_creating_job(self) -> None:
+        async with get_session(self.session_factory) as session:
+            created = await create_repo(
+                RepoCreate(name="target", local_path=str(self.repo_path)),
+                session=session,
+            )
+
+        request = types.SimpleNamespace()
+        with patch(
+            "repowise.server.provider_config.get_chat_provider_instance",
+            side_effect=ValueError("No active provider configured. Set an API key first."),
+        ):
+            async with get_session(self.session_factory) as session:
+                with self.assertRaises(HTTPException) as ctx:
+                    await full_resync(created.id, request=request, session=session)
+
+        self.assertEqual(ctx.exception.status_code, 409)
+        self.assertIn("No active provider configured", str(ctx.exception.detail))
+
+        async with get_session(self.session_factory) as session:
+            from sqlalchemy import func, select
+
+            from repowise.core.persistence.models import GenerationJob
+
+            count = await session.scalar(
+                select(func.count()).select_from(GenerationJob).where(GenerationJob.repository_id == created.id)
+            )
+
+        self.assertEqual(count, 0)
+
+    async def test_full_resync_job_fails_if_provider_disappears_before_execution(self) -> None:
+        async with get_session(self.session_factory) as session:
+            repo = await upsert_repository(
+                session,
+                name="target",
+                local_path=str(self.repo_path),
+            )
+            job = await upsert_generation_job(
+                session,
+                repository_id=repo.id,
+                status="pending",
+                config={"mode": "full_resync"},
+            )
+
+        app_state = types.SimpleNamespace(
+            session_factory=self.session_factory,
+            fts=None,
+            vector_store=None,
+        )
+
+        with patch(
+            "repowise.server.provider_config.get_chat_provider_instance",
+            side_effect=ValueError("No active provider configured. Set an API key first."),
+        ):
+            with patch("repowise.server.job_executor.run_pipeline") as run_pipeline:
+                with patch("repowise.server.job_executor.logger"):
+                    await execute_job(job.id, app_state)
+
+        run_pipeline.assert_not_called()
+        async with get_session(self.session_factory) as session:
+            stored = await get_generation_job(session, job.id)
+
+        self.assertIsNotNone(stored)
+        self.assertEqual(stored.status, "failed")
+        self.assertIn("Full re-index requires an active provider", stored.error_message or "")
 
     async def test_load_config_and_state_ignore_repo_local_legacy_files(self) -> None:
         legacy_dir = self.repo_path / ".repowise"

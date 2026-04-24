@@ -110,6 +110,7 @@ export interface JobResponse {
 export interface JobProgressEvent {
   event: "progress" | "done" | "error";
   job_id: string;
+  status?: "pending" | "running" | "completed" | "failed" | "paused";
   completed_pages: number;
   total_pages: number;
   current_page?: string;

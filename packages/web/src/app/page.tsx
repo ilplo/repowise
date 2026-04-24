@@ -14,7 +14,7 @@ import { listRepos, getRepoStats } from "@/lib/api/repos";
 import { listJobs } from "@/lib/api/jobs";
 import { getGitSummary } from "@/lib/api/git";
 import { getWorkspace } from "@/lib/api/workspace";
-import type { RepoStatsResponse, GitSummaryResponse } from "@/lib/api/types";
+import type { RepoStatsResponse, GitSummaryResponse, JobResponse } from "@/lib/api/types";
 import { StatCard } from "@/components/shared/stat-card";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -26,6 +26,18 @@ import { scoreToStatus } from "@/lib/utils/confidence";
 export const metadata: Metadata = { title: "Dashboard" };
 
 export const revalidate = 30;
+
+function formatJobWork(job: JobResponse): string {
+  const mode = (job.config?.mode as string | undefined) ?? "sync";
+  if (mode === "full_resync") {
+    const generated =
+      typeof job.config?.pages_generated === "number"
+        ? job.config.pages_generated
+        : job.completed_pages;
+    return `${formatNumber(generated)} pages`;
+  }
+  return `${formatNumber(job.total_pages)} files`;
+}
 
 export default async function DashboardPage() {
   const [repos, jobs, ws] = await Promise.allSettled([
@@ -208,10 +220,11 @@ export default async function DashboardPage() {
                         <span className="text-xs font-mono text-[var(--color-text-secondary)]">
                           {job.status === "running" ? (
                             <span className="text-[var(--color-accent-primary)]">
-                              {job.completed_pages}/{job.total_pages} pages
+                              {formatNumber(job.completed_pages)}/{formatNumber(job.total_pages)}{" "}
+                              {((job.config?.mode as string | undefined) ?? "sync") === "full_resync" ? "pages" : "files"}
                             </span>
                           ) : (
-                            `${job.total_pages} pages`
+                            formatJobWork(job)
                           )}
                         </span>
                         <Badge

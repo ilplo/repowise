@@ -132,10 +132,30 @@ def _write_server_state(
     )
 
 
-def clear_server_state() -> None:
+def _is_process_running(pid: int) -> bool:
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def clear_server_state(*, expected_pid: int | None = None) -> None:
     state_path = get_server_state_path()
-    if state_path.exists():
-        state_path.unlink()
+    if not state_path.exists():
+        return
+
+    if expected_pid is not None:
+        try:
+            payload = json.loads(state_path.read_text(encoding="utf-8"))
+        except Exception:
+            return
+        if int(payload.get("pid", -1)) != expected_pid:
+            return
+
+    state_path.unlink()
 
 
 def load_server_state() -> dict | None:
@@ -146,6 +166,50 @@ def load_server_state() -> dict | None:
         return json.loads(state_path.read_text(encoding="utf-8"))
     except Exception:
         return None
+
+
+def _find_listening_pids(port: int) -> list[int]:
+    lsof = shutil.which("lsof")
+    if not lsof:
+        return []
+
+    try:
+        result = subprocess.run(
+            [lsof, "-nP", f"-iTCP:{port}", "-sTCP:LISTEN", "-Fp"],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+    except OSError:
+        return []
+
+    if result.returncode not in (0, 1):
+        return []
+
+    pids: list[int] = []
+    seen: set[int] = set()
+    for line in result.stdout.splitlines():
+        if not line.startswith("p"):
+            continue
+        try:
+            pid = int(line[1:])
+        except ValueError:
+            continue
+        if pid not in seen:
+            seen.add(pid)
+            pids.append(pid)
+    return pids
+
+
+def _raise_if_port_busy(port: int, *, label: str) -> None:
+    pids = _find_listening_pids(port)
+    if not pids:
+        return
+    pid_text = ", ".join(str(pid) for pid in pids)
+    raise click.ClickException(
+        f"{label} port {port} is already in use by pid(s): {pid_text}. "
+        "Stop the existing process with `repowise stop` or choose another port."
+    )
 
 
 def _terminate_process(pid: int) -> bool:
@@ -171,6 +235,51 @@ def _terminate_process(pid: int) -> bool:
     return True
 
 
+def stop_server(
+    *,
+    port: int | None = None,
+    ui_port: int | None = None,
+    mcp_port: int | None = None,
+    no_ui: bool | None = None,
+    no_mcp: bool | None = None,
+) -> list[int]:
+    state = load_server_state() or {}
+    api_port = port if port is not None else int(state.get("port", 7337))
+    web_port = ui_port if ui_port is not None else int(state.get("ui_port", 3000))
+    sse_port = mcp_port if mcp_port is not None else int(state.get("mcp_port", 7338))
+    skip_ui = no_ui if no_ui is not None else bool(state.get("no_ui", False))
+    skip_mcp = no_mcp if no_mcp is not None else bool(state.get("no_mcp", False))
+
+    candidate_pids: set[int] = set()
+    state_pid = state.get("pid")
+    if state_pid is not None:
+        try:
+            pid = int(state_pid)
+        except (TypeError, ValueError):
+            pid = None
+        if pid is not None and _is_process_running(pid):
+            candidate_pids.add(pid)
+
+    candidate_pids.update(_find_listening_pids(api_port))
+    if not skip_ui:
+        candidate_pids.update(_find_listening_pids(web_port))
+    if not skip_mcp:
+        candidate_pids.update(_find_listening_pids(sse_port))
+
+    terminated: list[int] = []
+    for pid in sorted(candidate_pids):
+        if _terminate_process(pid):
+            terminated.append(pid)
+
+    if state_pid is not None:
+        try:
+            clear_server_state(expected_pid=int(state_pid))
+        except (TypeError, ValueError):
+            pass
+
+    return terminated
+
+
 def restart_server(
     *,
     repo_path: Path | None = None,
@@ -184,29 +293,37 @@ def restart_server(
 ) -> None:
     state = load_server_state() or {}
     effective_repo_path = repo_path or (Path(state["repo_path"]) if state.get("repo_path") else None)
-    if effective_repo_path is None:
-        raise click.ClickException("No previous server state found. Pass the repo path explicitly.")
-
-    if state.get("pid"):
-        _terminate_process(int(state["pid"]))
+    target_port = int(port if port is not None else state.get("port", 7337))
+    stop_server(
+        port=port,
+        ui_port=ui_port,
+        mcp_port=mcp_port,
+        no_ui=no_ui,
+        no_mcp=no_mcp,
+    )
 
     command = [
         sys.executable,
         "-m",
         "repowise",
         "start",
-        str(effective_repo_path),
-        "--port",
-        str(port if port is not None else state.get("port", 7337)),
-        "--host",
-        str(host if host is not None else state.get("host", "127.0.0.1")),
-        "--workers",
-        str(workers if workers is not None else state.get("workers", 1)),
-        "--ui-port",
-        str(ui_port if ui_port is not None else state.get("ui_port", 3000)),
-        "--mcp-port",
-        str(mcp_port if mcp_port is not None else state.get("mcp_port", 7338)),
     ]
+    if effective_repo_path is not None:
+        command.append(str(effective_repo_path))
+    command.extend(
+        [
+            "--port",
+            str(port if port is not None else state.get("port", 7337)),
+            "--host",
+            str(host if host is not None else state.get("host", "127.0.0.1")),
+            "--workers",
+            str(workers if workers is not None else state.get("workers", 1)),
+            "--ui-port",
+            str(ui_port if ui_port is not None else state.get("ui_port", 3000)),
+            "--mcp-port",
+            str(mcp_port if mcp_port is not None else state.get("mcp_port", 7338)),
+        ]
+    )
     effective_no_ui = no_ui if no_ui is not None else bool(state.get("no_ui", False))
     if effective_no_ui:
         command.append("--no-ui")
@@ -217,7 +334,7 @@ def restart_server(
     ensure_app_data_dir()
     log_path = get_server_log_path()
     with log_path.open("ab") as handle:
-        subprocess.Popen(
+        proc = subprocess.Popen(
             command,
             cwd=str(Path(__file__).resolve().parents[4]),
             stdout=handle,
@@ -225,6 +342,24 @@ def restart_server(
             stdin=subprocess.DEVNULL,
             start_new_session=True,
             env=_source_env(),
+        )
+
+    # Wait up to 10 s for the new server to bind the API port.
+    deadline = time.time() + 10
+    while time.time() < deadline:
+        if _find_listening_pids(target_port):
+            break
+        time.sleep(0.3)
+        if proc.poll() is not None:
+            # Child exited early — something went wrong
+            raise click.ClickException(
+                f"Server process exited immediately (code {proc.returncode}). "
+                f"Check {log_path} for details."
+            )
+    else:
+        raise click.ClickException(
+            f"Server did not start listening on port {target_port} within 10 seconds. "
+            f"Check {log_path} for details."
         )
 
 def _node_available() -> str | None:
@@ -343,6 +478,8 @@ def start_command(path: str | None, port: int, host: str, workers: int, ui_port:
     except ImportError:
         console.print("[red]uvicorn is not installed. Install it with: pip install repowise[/red]")
         raise SystemExit(1) from None
+
+    _raise_if_port_busy(port, label="API server")
 
     repo_path = resolve_repo_path(path) if path is not None else None
     if repo_path is not None:

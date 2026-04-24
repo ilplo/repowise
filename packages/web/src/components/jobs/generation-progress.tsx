@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { CheckCircle, XCircle, Loader2, RefreshCw } from "lucide-react";
+import { CheckCircle, XCircle, Loader2 } from "lucide-react";
 import { useJob } from "@/lib/hooks/use-job";
 import { Progress } from "@/components/ui/progress";
 import { Badge } from "@/components/ui/badge";
@@ -46,13 +46,27 @@ export function GenerationProgress({ jobId, repoName, onDone }: Props) {
     }
   }, [sse.data]);
 
+  const liveProgress = sse.data as JobProgressEvent | null;
+  const mode = (job?.config?.mode as string | undefined) ?? "sync";
+  const isFullResync = mode === "full_resync";
+  const completedPages = liveProgress?.completed_pages ?? job?.completed_pages ?? 0;
+  const totalPages = liveProgress?.total_pages ?? job?.total_pages ?? 0;
+  const currentLevel = liveProgress?.current_level ?? job?.current_level;
+  const failedPages = job?.failed_pages ?? 0;
+  const generatedPages =
+    typeof job?.config?.pages_generated === "number"
+      ? job.config.pages_generated
+      : completedPages;
+
   // Toast on terminal state
   useEffect(() => {
     if (notifiedRef.current) return;
     if (job?.status === "completed") {
       notifiedRef.current = true;
       toast.success(`Documentation updated${repoName ? ` — ${repoName}` : ""}`, {
-        description: `${formatNumber(job.completed_pages)} pages generated`,
+        description: isFullResync
+          ? `${formatNumber(generatedPages)} pages generated`
+          : `${formatNumber(job.completed_pages)} files scanned`,
       });
       onDone?.();
     } else if (job?.status === "failed") {
@@ -62,11 +76,11 @@ export function GenerationProgress({ jobId, repoName, onDone }: Props) {
       });
       onDone?.();
     }
-  }, [job?.status, job?.completed_pages, job?.error_message, repoName, onDone]);
+  }, [job?.status, job?.completed_pages, job?.config, job?.error_message, generatedPages, isFullResync, repoName, onDone]);
 
-  const progress = job
-    ? job.total_pages > 0
-      ? Math.round((job.completed_pages / job.total_pages) * 100)
+  const progress = job || liveProgress
+    ? totalPages > 0
+      ? Math.round((completedPages / totalPages) * 100)
       : 0
     : 0;
 
@@ -84,9 +98,9 @@ export function GenerationProgress({ jobId, repoName, onDone }: Props) {
         {isFailed && <XCircle className="h-4 w-4 text-[var(--color-outdated)] shrink-0" />}
 
         <span className="text-sm font-medium text-[var(--color-text-primary)]">
-          {isRunning && `Generating level ${job?.current_level ?? "?"}…`}
-          {isDone && "Generation complete"}
-          {isFailed && "Generation failed"}
+          {isRunning && `${isFullResync ? "Re-indexing" : "Scanning"}${currentLevel != null ? ` level ${currentLevel}` : ""}…`}
+          {isDone && (isFullResync ? "Re-index complete" : "Scan complete")}
+          {isFailed && (isFullResync ? "Re-index failed" : "Scan failed")}
         </span>
 
         <span className="ml-auto text-xs text-[var(--color-text-tertiary)] tabular-nums">
@@ -102,12 +116,12 @@ export function GenerationProgress({ jobId, repoName, onDone }: Props) {
         />
         <div className="flex justify-between text-xs text-[var(--color-text-tertiary)]">
           <span>
-            {formatNumber(job?.completed_pages ?? 0)} /{" "}
-            {formatNumber(job?.total_pages ?? 0)} pages
+            {formatNumber(completedPages)} /{" "}
+            {formatNumber(totalPages)} {isFullResync ? "pages" : "files"}
           </span>
-          {(job?.failed_pages ?? 0) > 0 && (
+          {failedPages > 0 && (
             <Badge variant="stale" className="text-xs py-0">
-              {job!.failed_pages} failed
+              {failedPages} failed
             </Badge>
           )}
           <span>{progress}%</span>
@@ -132,9 +146,9 @@ export function GenerationProgress({ jobId, repoName, onDone }: Props) {
         <div className="grid grid-cols-3 gap-2">
           <div className="rounded border border-[var(--color-border-default)] p-2 text-center">
             <p className="text-lg font-semibold text-[var(--color-text-primary)]">
-              {formatNumber(job!.completed_pages)}
+              {formatNumber(isFullResync ? generatedPages : completedPages)}
             </p>
-            <p className="text-xs text-[var(--color-text-tertiary)]">pages</p>
+            <p className="text-xs text-[var(--color-text-tertiary)]">{isFullResync ? "pages" : "files"}</p>
           </div>
           <div className="rounded border border-[var(--color-border-default)] p-2 text-center">
             <p className="text-lg font-semibold text-[var(--color-text-primary)]">
