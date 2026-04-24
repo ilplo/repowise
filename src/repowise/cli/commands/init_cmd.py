@@ -767,6 +767,20 @@ def init_command(
 
         from repowise.cli.mcp_config import format_setup_instructions
 
+        from repowise.cli.commands.start_cmd import (
+            _build_local_web,
+            _find_local_web,
+            _frontend_needs_build,
+            _npm_available,
+        )
+
+        local_web = _find_local_web()
+        npm = _npm_available()
+        if local_web and npm and _frontend_needs_build(local_web):
+            console.print("[dim]Rebuilding web UI…[/dim]")
+            if _build_local_web(local_web, npm):
+                console.print("[green]✓[/green] Frontend built.")
+
         console.print()
         console.print(build_completion_panel("repowise init complete", metrics))
         console.print()

@@ -130,6 +130,9 @@ export function QuickActions({ repoId, repoName, pageCount = 0, modelName = "", 
   const [loading, setLoading] = useState<ActionKey | null>(null);
   const [pendingAction, setPendingAction] = useState<ActionDef | null>(null);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const [activeJobKey, setActiveJobKey] = useState<"sync" | "resync" | null>(null);
+  const [syncAt, setSyncAt] = useState(lastSyncAt);
+  const [resyncAt, setResyncAt] = useState(lastResyncAt);
 
   // Sync regenerates ~10-15% of pages (only affected by changes).
   // Full resync regenerates all pages.
@@ -147,10 +150,12 @@ export function QuickActions({ repoId, repoName, pageCount = 0, modelName = "", 
       if (action.key === "sync") {
         const job = await syncRepo(repoId);
         setActiveJobId(job.id);
+        setActiveJobKey("sync");
         toast.info(`Sync started${repoName ? ` — ${repoName}` : ""}`);
       } else if (action.key === "resync") {
         const job = await fullResyncRepo(repoId);
         setActiveJobId(job.id);
+        setActiveJobKey("resync");
         toast.info(`Full resync started${repoName ? ` — ${repoName}` : ""}`);
       } else if (action.key === "dead-code") {
         await analyzeDeadCode(repoId);
@@ -181,7 +186,13 @@ export function QuickActions({ repoId, repoName, pageCount = 0, modelName = "", 
           <GenerationProgress
             jobId={activeJobId}
             repoName={repoName}
-            onDone={() => setActiveJobId(null)}
+            onDone={(finishedAt) => {
+              const ts = finishedAt ?? new Date().toISOString();
+              if (activeJobKey === "sync") setSyncAt(ts);
+              if (activeJobKey === "resync") setResyncAt(ts);
+              setActiveJobId(null);
+              setActiveJobKey(null);
+            }}
           />
         </div>
       )}
@@ -212,13 +223,13 @@ export function QuickActions({ repoId, repoName, pageCount = 0, modelName = "", 
             <span className="text-[11px] text-[var(--color-text-tertiary)]">
               Last synced{" "}
               <span className="text-[var(--color-text-secondary)]">
-                {lastSyncAt ? formatRelativeTime(lastSyncAt) : "never"}
+                {syncAt ? formatRelativeTime(syncAt) : "never"}
               </span>
             </span>
             <span className="text-[11px] text-[var(--color-text-tertiary)]">
               Last re-indexed{" "}
               <span className="text-[var(--color-text-secondary)]">
-                {lastResyncAt ? formatRelativeTime(lastResyncAt) : "never"}
+                {resyncAt ? formatRelativeTime(resyncAt) : "never"}
               </span>
             </span>
           </div>

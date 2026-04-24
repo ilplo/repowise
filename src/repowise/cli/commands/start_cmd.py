@@ -381,9 +381,38 @@ def _find_local_web() -> Path | None:
     return None
 
 
+def _frontend_needs_build(web_dir: Path) -> bool:
+    """Return True if frontend source is newer than the last build."""
+    server_js = web_dir / ".next" / "standalone" / "server.js"
+    if not server_js.exists():
+        return True
+    build_mtime = server_js.stat().st_mtime
+    watch = [
+        web_dir / "src",
+        web_dir / "public",
+        web_dir / "package.json",
+        web_dir / "next.config.ts",
+        web_dir / "next.config.js",
+        web_dir / "tailwind.config.ts",
+        web_dir / "tailwind.config.js",
+        web_dir / "tsconfig.json",
+    ]
+    for path in watch:
+        if not path.exists():
+            continue
+        if path.is_file():
+            if path.stat().st_mtime > build_mtime:
+                return True
+        else:
+            for f in path.rglob("*"):
+                if f.is_file() and f.stat().st_mtime > build_mtime:
+                    return True
+    return False
+
+
 def _build_local_web(web_dir: Path, npm: str) -> bool:
     """Build the Next.js frontend from source."""
-    console.print("[dim]Building web UI (first time only)...[/dim]")
+    console.print("[dim]Building web UI…[/dim]")
     try:
         # Install deps if needed
         if not (web_dir / "node_modules").exists():
@@ -528,14 +557,10 @@ def start_command(path: str | None, port: int, host: str, workers: int, ui_port:
                 "[yellow]Local Web UI source not found in packages/web — starting API server only.[/yellow]"
             )
         else:
-            ready = False
-
-            standalone = local_web / ".next" / "standalone" / "server.js"
-            if standalone.exists():
-                ready = True
-
-            if not ready:
+            if _frontend_needs_build(local_web):
                 ready = _build_local_web(local_web, npm) if npm else False
+            else:
+                ready = True
 
             if ready:
                 frontend_proc = _start_frontend(node, port, ui_port)

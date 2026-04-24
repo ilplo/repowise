@@ -435,9 +435,15 @@ class PageGenerator:
         """
         graph = graph_builder.graph()
         pagerank = graph_builder.pagerank()
-        betweenness = graph_builder.betweenness_centrality()
-        community = graph_builder.community_detection()
-        sccs = graph_builder.strongly_connected_components()
+        # betweenness_centrality and community_detection are CPU-bound and can
+        # block the event loop for 30s+ on large repos — run in a thread.
+        betweenness, community, sccs = await asyncio.to_thread(
+            lambda: (
+                graph_builder.betweenness_centrality(),
+                graph_builder.community_detection(),
+                graph_builder.strongly_connected_components(),
+            )
+        )
 
         all_pages: list[GeneratedPage] = []
         semaphore = asyncio.Semaphore(self._config.max_concurrency)
@@ -627,6 +633,7 @@ class PageGenerator:
         remaining_total = max(0, estimated_total - len(completed_ids))
         if on_total_known is not None:
             on_total_known(remaining_total)
+            await asyncio.sleep(0)  # yield so the DB progress task runs immediately
         if job_system is not None and job_id is not None:
             job_system.start_job(job_id, estimated_total)
 

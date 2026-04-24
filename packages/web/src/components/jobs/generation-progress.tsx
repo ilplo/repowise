@@ -13,8 +13,8 @@ import type { JobProgressEvent } from "@/lib/api/types";
 interface Props {
   jobId: string;
   repoName?: string;
-  /** Called when the job reaches a terminal state */
-  onDone?: () => void;
+  /** Called when the job reaches a terminal state, with the job's finished_at timestamp */
+  onDone?: (finishedAt: string | null) => void;
 }
 
 export function GenerationProgress({ jobId, repoName, onDone }: Props) {
@@ -68,13 +68,13 @@ export function GenerationProgress({ jobId, repoName, onDone }: Props) {
           ? `${formatNumber(generatedPages)} pages generated`
           : `${formatNumber(job.completed_pages)} files scanned`,
       });
-      onDone?.();
+      onDone?.(job.finished_at ?? new Date().toISOString());
     } else if (job?.status === "failed") {
       notifiedRef.current = true;
       toast.error("Generation failed", {
         description: job.error_message ?? "Unknown error",
       });
-      onDone?.();
+      onDone?.(job.finished_at ?? null);
     }
   }, [job?.status, job?.completed_pages, job?.config, job?.error_message, generatedPages, isFullResync, repoName, onDone]);
 

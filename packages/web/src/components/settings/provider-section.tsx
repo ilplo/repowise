@@ -13,74 +13,78 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { addProviderKey, removeProviderKey, getProviders } from "@/lib/api/providers";
 
-const PROVIDERS = ["gemini", "openai", "anthropic", "ollama", "litellm", "mock"] as const;
-const EMBEDDERS = ["mock", "gemini", "openai"] as const;
+const XAI_MODELS = [
+  "grok-4-1-fast-reasoning",
+  "grok-4-fast-reasoning",
+  "grok-3-mini-fast",
+] as const;
 
-const MODEL_PLACEHOLDERS: Record<string, string> = {
-  gemini: "gemini-3.1-flash-lite-preview",
-  openai: "gpt-4.1",
-  anthropic: "claude-sonnet-4-6",
-  ollama: "llama3.2",
-  litellm: "groq/llama-3.1-70b-versatile",
-  mock: "mock",
-};
-
-const PROVIDER_ENV_VARS: Record<string, { vars: string[]; installHint: string }> = {
-  gemini: { vars: ["GEMINI_API_KEY"], installHint: "pip install google-genai" },
-  openai: { vars: ["OPENAI_API_KEY"], installHint: "pip install openai" },
-  anthropic: { vars: ["ANTHROPIC_API_KEY"], installHint: "pip install anthropic" },
-  ollama: { vars: ["OLLAMA_BASE_URL"], installHint: "https://ollama.ai" },
-  litellm: { vars: ["LITELLM_*"], installHint: "pip install litellm" },
-  mock: { vars: [], installHint: "No key needed" },
-};
-
-const EMBEDDER_ENV_VARS: Record<string, string[]> = {
-  gemini: ["GEMINI_API_KEY"],
-  openai: ["OPENAI_API_KEY"],
-  mock: [],
-};
+const DEFAULT_MODEL = "grok-4-1-fast-reasoning";
 
 type TestStatus = "idle" | "testing" | "ok" | "error";
+type KeyStatus = "idle" | "saving" | "saved" | "error";
 
 export function ProviderSection() {
-  const [provider, setProvider] = useState("gemini");
-  const [model, setModel] = useState("");
-  const [embedder, setEmbedder] = useState("mock");
+  const [model, setModel] = useState(DEFAULT_MODEL);
+  const [apiKey, setApiKey] = useState("");
+  const [keyConfigured, setKeyConfigured] = useState(false);
+  const [keyStatus, setKeyStatus] = useState<KeyStatus>("idle");
+  const [keyError, setKeyError] = useState("");
   const [testStatus, setTestStatus] = useState<TestStatus>("idle");
   const [testError, setTestError] = useState("");
-  const [serverProvider, setServerProvider] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState<string | null>(null);
 
   useEffect(() => {
-    setProvider(config.getProvider());
-    setModel(config.getModel());
-    setEmbedder(config.getEmbedder());
-    // Fetch current server config from /api/health
-    fetch("/api/health")
-      .then((r) => r.json())
+    const saved = config.getModel();
+    setModel(saved && (XAI_MODELS as readonly string[]).includes(saved) ? saved : DEFAULT_MODEL);
+    config.setProvider("xai");
+    getProviders()
       .then((data) => {
-        if (data?.provider) setServerProvider(data.provider);
+        const xai = data.providers.find((p) => p.id === "xai");
+        if (xai) setKeyConfigured(xai.configured);
       })
       .catch(() => {});
   }, []);
 
-  function handleProviderChange(v: string) {
-    setProvider(v);
-    config.setProvider(v);
-    setTestStatus("idle");
+  function handleModelChange(v: string) {
+    setModel(v);
+    config.setModel(v);
   }
 
-  function handleEmbedderChange(v: string) {
-    setEmbedder(v);
-    config.setEmbedder(v);
+  async function handleSaveKey() {
+    if (!apiKey.trim()) return;
+    setKeyStatus("saving");
+    setKeyError("");
+    try {
+      await addProviderKey("xai", apiKey.trim());
+      setKeyConfigured(true);
+      setApiKey("");
+      setKeyStatus("saved");
+    } catch {
+      setKeyStatus("error");
+      setKeyError("Failed to save key");
+    }
+  }
+
+  async function handleRemoveKey() {
+    setKeyStatus("saving");
+    setKeyError("");
+    try {
+      await removeProviderKey("xai");
+      setKeyConfigured(false);
+      setKeyStatus("idle");
+    } catch {
+      setKeyStatus("error");
+      setKeyError("Failed to remove key");
+    }
   }
 
   async function handleTestConnection() {
     setTestStatus("testing");
     setTestError("");
     try {
-      const res = await fetch("/api/health");
+      const res = await fetch("/health");
       const data = await res.json();
       if (res.ok && data.status === "healthy") {
         setTestStatus("ok");
@@ -94,98 +98,73 @@ export function ProviderSection() {
     }
   }
 
-  const providerInfo = PROVIDER_ENV_VARS[provider];
-  const embedderVars = EMBEDDER_ENV_VARS[embedder] ?? [];
-
   return (
     <div className="space-y-4">
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Provider &amp; Model</CardTitle>
+          <CardTitle className="text-base">xAI / Grok</CardTitle>
           <CardDescription>
-            Defaults used when triggering init or sync from the UI.
+            API key and model used when triggering init or sync from the UI.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-1.5">
-              <Label>Provider</Label>
-              <Select value={provider} onValueChange={handleProviderChange}>
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {PROVIDERS.map((p) => (
-                    <SelectItem key={p} value={p}>
-                      {p}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2">
+              <Label>API Key</Label>
+              {keyConfigured && (
+                <Badge variant="outline" className="text-xs text-green-600 dark:text-green-400 border-green-500/40">
+                  ✓ configured
+                </Badge>
+              )}
             </div>
-
-            <div className="space-y-1.5">
-              <Label htmlFor="model">Model</Label>
+            <div className="flex gap-2">
               <Input
-                id="model"
-                placeholder={MODEL_PLACEHOLDERS[provider] ?? "model name"}
-                value={model}
-                onChange={(e) => setModel(e.target.value)}
-                onBlur={() => config.setModel(model)}
-                className="font-mono"
+                type="password"
+                placeholder={keyConfigured ? "••••••••••••••••" : "xai-…"}
+                value={apiKey}
+                onChange={(e) => { setApiKey(e.target.value); setKeyStatus("idle"); }}
+                onKeyDown={(e) => { if (e.key === "Enter") handleSaveKey(); }}
+                className="font-mono flex-1"
               />
+              <button
+                onClick={handleSaveKey}
+                disabled={!apiKey.trim() || keyStatus === "saving"}
+                className="text-sm px-3 py-1.5 rounded-md border border-[var(--color-border)] hover:bg-[var(--color-bg-secondary)] disabled:opacity-50 transition-colors whitespace-nowrap"
+              >
+                {keyStatus === "saving" ? "Saving…" : "Save"}
+              </button>
+              {keyConfigured && (
+                <button
+                  onClick={handleRemoveKey}
+                  disabled={keyStatus === "saving"}
+                  className="text-sm px-3 py-1.5 rounded-md border border-[var(--color-border)] hover:bg-[var(--color-bg-secondary)] disabled:opacity-50 transition-colors text-[var(--color-outdated)]"
+                >
+                  Remove
+                </button>
+              )}
             </div>
+            {keyStatus === "saved" && (
+              <p className="text-xs text-green-600 dark:text-green-400">✓ Key saved</p>
+            )}
+            {keyStatus === "error" && (
+              <p className="text-xs text-[var(--color-outdated)]">{keyError}</p>
+            )}
           </div>
 
-          {providerInfo && providerInfo.vars.length > 0 && (
-            <div className="rounded-md border border-dashed p-3 space-y-1.5">
-              <p className="text-xs font-medium text-[var(--color-text-secondary)]">
-                Required env vars for {provider}:
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {providerInfo.vars.map((v) => (
-                  <code
-                    key={v}
-                    className="text-xs bg-[var(--color-bg-secondary)] px-1.5 py-0.5 rounded font-mono"
-                  >
-                    {v}
-                  </code>
-                ))}
-              </div>
-              <p className="text-xs text-[var(--color-text-tertiary)]">{providerInfo.installHint}</p>
-            </div>
-          )}
-
           <div className="space-y-1.5">
-            <Label>Embedder</Label>
-            <Select value={embedder} onValueChange={handleEmbedderChange}>
-              <SelectTrigger className="w-48">
+            <Label>Model</Label>
+            <Select value={model} onValueChange={handleModelChange}>
+              <SelectTrigger className="w-72 font-mono">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {EMBEDDERS.map((e) => (
-                  <SelectItem key={e} value={e}>
-                    {e}
+                {XAI_MODELS.map((m) => (
+                  <SelectItem key={m} value={m} className="font-mono">
+                    {m}
                   </SelectItem>
                 ))}
               </SelectContent>
             </Select>
-            {embedderVars.length > 0 && (
-              <p className="text-xs text-[var(--color-text-tertiary)]">
-                Requires{" "}
-                {embedderVars.map((v) => (
-                  <code key={v} className="font-mono">{v}</code>
-                ))}{" "}
-                — set <code className="font-mono">REPOWISE_EMBEDDER={embedder}</code> on the server.
-              </p>
-            )}
-            {embedder === "mock" && (
-              <p className="text-xs text-[var(--color-text-tertiary)]">
-                Using mock embedder — semantic search disabled. Set{" "}
-                <code className="font-mono">REPOWISE_EMBEDDER=gemini</code> or{" "}
-                <code className="font-mono">REPOWISE_EMBEDDER=openai</code> for real RAG.
-              </p>
-            )}
           </div>
         </CardContent>
       </Card>
@@ -198,12 +177,6 @@ export function ProviderSection() {
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">
-          {serverProvider && (
-            <p className="text-sm text-[var(--color-text-secondary)]">
-              Server configured with provider:{" "}
-              <Badge variant="outline" className="font-mono text-xs">{serverProvider}</Badge>
-            </p>
-          )}
           <div className="flex items-center gap-3">
             <button
               onClick={handleTestConnection}
