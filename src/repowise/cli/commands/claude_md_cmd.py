@@ -42,7 +42,7 @@ def claude_md_command(
       - Your custom instructions (above the REPOWISE markers) — never modified.
       - Repowise-managed section (between markers) — auto-updated from the index.
 
-    Run 'repowise init' or 'repowise update' to keep it current automatically.
+    Run 'repowise init --claude-md' to opt into keeping it current automatically.
     """
     repo_path = Path(path).resolve() if path else Path.cwd()
     ensure_repowise_dir(repo_path)

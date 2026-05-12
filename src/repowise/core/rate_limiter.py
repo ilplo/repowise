@@ -47,8 +47,6 @@ PROVIDER_DEFAULTS: dict[str, RateLimitConfig] = {
     "openai": RateLimitConfig(requests_per_minute=60, tokens_per_minute=150_000),
     "xai": RateLimitConfig(requests_per_minute=60, tokens_per_minute=150_000),
     "gemini": RateLimitConfig(requests_per_minute=60, tokens_per_minute=1_000_000),
-    # Ollama runs locally — effectively unlimited, but we cap to avoid OOM
-    "ollama": RateLimitConfig(requests_per_minute=1_000, tokens_per_minute=10_000_000),
     "litellm": RateLimitConfig(requests_per_minute=60, tokens_per_minute=150_000),
 }
 

@@ -9,6 +9,10 @@ done
 
 SCRIPT_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
 REPO_ROOT="$(dirname "$SCRIPT_DIR")"
+VENV_DIR="${REPO_ROOT}/.venv"
 
 export PYTHONPATH="${REPO_ROOT}/src${PYTHONPATH:+:$PYTHONPATH}"
-exec "${REPO_ROOT}/.venv/bin/python" -m repowise "$@"
+export VIRTUAL_ENV="${VENV_DIR}"
+export PATH="${VENV_DIR}/bin${PATH:+:$PATH}"
+unset PYTHONHOME
+exec "${VENV_DIR}/bin/python" -m repowise "$@"

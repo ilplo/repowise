@@ -22,7 +22,7 @@ This is a behavioral and storage-ownership refactor, not a new feature bolted on
 
 - Repowise already has a central SQLAlchemy schema with `repositories`, `wiki_pages`, `wiki_page_versions`, `graph_nodes`, `graph_edges`, `generation_jobs`, and other derived-data tables.
 - The current runtime still resolves database location from a target repo path and defaults to `<target>/.repowise/wiki.db`.
-- `init`, `update`, `status`, `serve`, and server routes still assume a target repo path is the primary anchor for both runtime and persistence.
+- `init`, `update`, `status`, `start`, and server routes still assume a target repo path is the primary anchor for both runtime and persistence.
 - The UI already has repository CRUD and background sync flows under `/api/repos`.
 
 ## Assumptions
@@ -327,11 +327,11 @@ Flows:
 ### 1. CLI Startup With `.venv` Re-exec
 
 ```text
-User -> CLI entrypoint: repowise serve
+User -> CLI entrypoint: repowise start
 CLI entrypoint -> Runtime Bootstrap: inspect cwd and current interpreter
 Runtime Bootstrap -> Runtime Bootstrap: locate repo checkout and .venv
 alt stale interpreter
-  Runtime Bootstrap -> OS: exec .venv/bin/python -m repowise.cli.main serve ...
+  Runtime Bootstrap -> OS: exec .venv/bin/python -m repowise start ...
 else already correct
   Runtime Bootstrap -> CLI entrypoint: continue
 end
@@ -352,7 +352,7 @@ API -> Browser UI: persisted repository card
 ### 3. Restart and Restore State
 
 ```text
-User -> CLI entrypoint: repowise serve
+User -> CLI entrypoint: repowise start
 CLI entrypoint -> FastAPI Server: start under .venv
 FastAPI Server -> Central DB: initialize schema and connect
 Browser UI -> API /api/repos: GET
@@ -451,7 +451,7 @@ Why:
 - UI add/list flows fully persistent
 
 ### Slice 3
-- `init`, `update`, `status`, `serve`, and job execution stop reading/writing target-local state files
+- `init`, `update`, `status`, `start`, and job execution stop reading/writing target-local state files
 
 ### Slice 4
 - One-time migration/import from target-local DBs if present
@@ -459,9 +459,9 @@ Why:
 
 ## Proof Points
 
-- Add a repo in the UI, restart `repowise serve`, confirm the repo still appears.
+- Add a repo in the UI, restart `repowise start`, confirm the repo still appears.
 - Run sync, restart the server, confirm pages/graph/history remain available.
-- Start `repowise init` or `repowise serve` from the Repowise checkout without activating the shell venv and confirm the process re-execs into `.venv`.
+- Start `repowise init` or `repowise start` from the Repowise checkout without activating the shell venv and confirm the process re-execs into `.venv`.
 
 ## Recommended Next Step
 

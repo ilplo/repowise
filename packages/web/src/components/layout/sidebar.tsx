@@ -33,6 +33,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { AddRepoDialog } from "@/components/repos/add-repo-dialog";
+import { ThemeToggle } from "@/components/layout/theme-toggle";
 import type { RepoResponse, WorkspaceResponse } from "@/lib/api/types";
 
 interface NavItem {
@@ -118,6 +119,7 @@ export function Sidebar({ repos = [], activeRepoId, workspace }: SidebarProps) {
             repowise
           </span>
         )}
+        {!isIconOnly && <ThemeToggle />}
         <button
           onClick={() => setCollapsed((c) => !c)}
           className="ml-auto shrink-0 rounded-md p-1.5 text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-elevated)] hover:text-[var(--color-text-secondary)] transition-colors"
@@ -268,13 +270,15 @@ export function Sidebar({ repos = [], activeRepoId, workspace }: SidebarProps) {
       </ScrollArea>
 
       {/* Footer */}
-      {!isIconOnly && (
-        <div className="border-t border-[var(--color-border-default)] px-4 py-3">
+      <div className={cn("border-t border-[var(--color-border-default)] py-3", isIconOnly ? "flex justify-center px-0" : "px-4")}>
+        {isIconOnly ? (
+          <ThemeToggle iconOnly />
+        ) : (
           <p className="text-xs text-[var(--color-text-tertiary)]">
             repowise v0.1.0
           </p>
-        </div>
-      )}
+        )}
+      </div>
     </aside>
   );
 }
@@ -330,4 +334,3 @@ function SidebarNavItem({
     </Link>
   );
 }
-

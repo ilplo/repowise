@@ -7,6 +7,7 @@ import sys
 import tempfile
 import types
 import unittest
+from contextlib import asynccontextmanager
 from pathlib import Path
 from unittest.mock import patch
 
@@ -21,9 +22,9 @@ from repowise.core.persistence import create_engine, create_session_factory, get
 from repowise.core.persistence.crud import get_generation_job, upsert_generation_job, upsert_repository
 from repowise.core.persistence.models import Page
 from repowise.core.persistence.page_ids import make_storage_page_id
-from repowise.server.routers.repos import create_repo, full_resync, list_repos, sync_repo
+from repowise.server.routers.repos import create_repo, full_resync, list_repos, run_update_command, sync_repo
 from repowise.server.schemas import RepoCreate
-from repowise.server.job_executor import execute_job
+from repowise.server.job_executor import JobProgressCallback, execute_job
 
 
 class CentralRepoPersistenceTests(unittest.IsolatedAsyncioTestCase):
@@ -37,7 +38,15 @@ class CentralRepoPersistenceTests(unittest.IsolatedAsyncioTestCase):
         self.repo_path = self.root / "target-repo"
         (self.repo_path / ".git").mkdir(parents=True)
 
-        self.env_patch = patch.dict(os.environ, {"REPOWISE_APP_ROOT": str(self.app_root)}, clear=False)
+        self.env_patch = patch.dict(
+            os.environ,
+            {
+                "REPOWISE_APP_ROOT": str(self.app_root),
+                "REPOWISE_DB_URL": "",
+                "REPOWISE_DATABASE_URL": "",
+            },
+            clear=False,
+        )
         self.env_patch.start()
         self.addAsyncCleanup(self._stop_env_patch)
 
@@ -109,7 +118,26 @@ class CentralRepoPersistenceTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(job.repository_id, created.id)
         self.assertEqual(job.status, "pending")
+        self.assertEqual(job.config["mode"], "sync")
         self.assertTrue(job.id)
+        launch.assert_called_once_with(request, job.id)
+
+    async def test_run_update_command_creates_cli_update_job(self) -> None:
+        async with get_session(self.session_factory) as session:
+            created = await create_repo(
+                RepoCreate(name="target", local_path=str(self.repo_path)),
+                session=session,
+            )
+
+        request = types.SimpleNamespace()
+        with patch("repowise.server.routers.repos._launch_job_task") as launch:
+            async with get_session(self.session_factory) as session:
+                job = await run_update_command(created.id, request=request, session=session)
+
+        self.assertEqual(job.repository_id, created.id)
+        self.assertEqual(job.status, "pending")
+        self.assertEqual(job.config["mode"], "cli_update")
+        self.assertEqual(job.config["command"], f"repowise update {created.local_path}")
         launch.assert_called_once_with(request, job.id)
 
     async def test_full_resync_rejects_missing_provider_before_creating_job(self) -> None:
@@ -178,6 +206,95 @@ class CentralRepoPersistenceTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(stored.status, "failed")
         self.assertIn("Full re-index requires an active provider", stored.error_message or "")
 
+    async def test_cli_update_job_runs_repowise_update_command(self) -> None:
+        async with get_session(self.session_factory) as session:
+            repo = await upsert_repository(
+                session,
+                name="target",
+                local_path=str(self.repo_path),
+            )
+            job = await upsert_generation_job(
+                session,
+                repository_id=repo.id,
+                status="pending",
+                config={"mode": "cli_update"},
+            )
+
+        class FakeProc:
+            returncode = 0
+
+            async def communicate(self) -> tuple[bytes, bytes]:
+                return b"updated\n", b""
+
+        async def fake_create_proc(*args, **kwargs) -> FakeProc:
+            return FakeProc()
+
+        app_state = types.SimpleNamespace(
+            session_factory=self.session_factory,
+            fts=None,
+            vector_store=None,
+        )
+
+        with patch(
+            "repowise.server.job_executor.asyncio.create_subprocess_exec",
+            side_effect=fake_create_proc,
+        ) as create_proc:
+            await execute_job(job.id, app_state)
+
+        args, kwargs = create_proc.call_args
+        self.assertEqual(args[1:5], ("-m", "repowise", "update", str(self.repo_path.resolve())))
+        self.assertEqual(kwargs["cwd"], str(self.repo_path.resolve()))
+
+        async with get_session(self.session_factory) as session:
+            stored = await get_generation_job(session, job.id)
+
+        self.assertIsNotNone(stored)
+        self.assertEqual(stored.status, "completed")
+        self.assertEqual(stored.completed_pages, 1)
+        self.assertEqual(stored.total_pages, 1)
+
+    async def test_job_progress_updates_are_coalesced_to_one_writer(self) -> None:
+        release_update = asyncio.Event()
+        first_update_started = asyncio.Event()
+        active_writers = 0
+        max_active_writers = 0
+        update_calls = 0
+
+        @asynccontextmanager
+        async def fake_get_session(_session_factory):
+            yield object()
+
+        async def fake_update_job_status(*_args, **_kwargs) -> None:
+            nonlocal active_writers, max_active_writers, update_calls
+            active_writers += 1
+            update_calls += 1
+            max_active_writers = max(max_active_writers, active_writers)
+            first_update_started.set()
+            await release_update.wait()
+            active_writers -= 1
+
+        with (
+            patch("repowise.server.job_executor.get_session", fake_get_session),
+            patch("repowise.server.job_executor.update_job_status", fake_update_job_status),
+        ):
+            progress = JobProgressCallback("job-1", self.session_factory)
+            progress._flush_interval = 1
+
+            progress.on_phase_start("parse", 10)
+            await asyncio.wait_for(first_update_started.wait(), timeout=1)
+
+            for _ in range(10):
+                progress.on_item_done("parse")
+
+            await asyncio.sleep(0)
+            self.assertEqual(max_active_writers, 1)
+            self.assertLessEqual(len(progress._pending_tasks), 1)
+
+            release_update.set()
+            await progress.drain_and_stop()
+
+        self.assertGreaterEqual(update_calls, 1)
+
     async def test_load_config_and_state_ignore_repo_local_legacy_files(self) -> None:
         legacy_dir = self.repo_path / ".repowise"
         legacy_dir.mkdir(parents=True)
@@ -198,7 +315,15 @@ class DoctorCommandTests(unittest.TestCase):
         self.repo_path = self.root / "target-repo"
         (self.repo_path / ".git").mkdir(parents=True)
 
-        self.env_patch = patch.dict(os.environ, {"REPOWISE_APP_ROOT": str(self.app_root)}, clear=False)
+        self.env_patch = patch.dict(
+            os.environ,
+            {
+                "REPOWISE_APP_ROOT": str(self.app_root),
+                "REPOWISE_DB_URL": "",
+                "REPOWISE_DATABASE_URL": "",
+            },
+            clear=False,
+        )
         self.env_patch.start()
         self.addCleanup(self.env_patch.stop)
 

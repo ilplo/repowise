@@ -7,11 +7,11 @@ export async function listJobs(opts?: {
   limit?: number;
   offset?: number;
 }): Promise<JobResponse[]> {
-  return apiGet<JobResponse[]>("/api/jobs", opts);
+  return apiGet<JobResponse[]>("/api/jobs", opts, { cache: "no-store" });
 }
 
 export async function getJob(jobId: string): Promise<JobResponse> {
-  return apiGet<JobResponse>(`/api/jobs/${jobId}`);
+  return apiGet<JobResponse>(`/api/jobs/${jobId}`, undefined, { cache: "no-store" });
 }
 
 /** Returns the SSE stream URL for a job. Use with EventSource or the useSSE hook. */

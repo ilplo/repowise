@@ -43,8 +43,23 @@ export default async function RootLayout({
   return (
     <html
       lang="en"
+      suppressHydrationWarning
       className={`${GeistSans.variable} ${GeistMono.variable} dark`}
+      data-theme="night"
     >
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(() => {
+try {
+  const mode = localStorage.getItem("repowise_theme") === "day" ? "day" : "night";
+  document.documentElement.classList.toggle("dark", mode === "night");
+  document.documentElement.dataset.theme = mode;
+} catch {}
+})();`,
+          }}
+        />
+      </head>
       <body className="bg-[var(--color-bg-root)] text-[var(--color-text-primary)] antialiased">
         <NuqsAdapter>
         <TooltipProvider delayDuration={300}>
@@ -61,7 +76,7 @@ export default async function RootLayout({
         </TooltipProvider>
         </NuqsAdapter>
         <Toaster
-          theme="dark"
+          theme="system"
           position="bottom-right"
           toastOptions={{
             style: {

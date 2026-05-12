@@ -69,46 +69,41 @@ def _start_mcp_daemon(repo_path: Path) -> None:
         pass  # Non-fatal — user can start it manually
 
 
-def _register_mcp_with_claude(console_obj: Any, repo_path: Path) -> None:
-    """Register the repowise MCP server with Claude Desktop and Claude Code."""
-    from repowise.cli.mcp_config import register_with_claude_code, register_with_claude_desktop
+def _register_mcp_with_codex(console_obj: Any, repo_path: Path) -> None:
+    """Register the repowise MCP server with Codex for this project."""
+    from repowise.cli.mcp_config import save_codex_mcp_config
 
-    desktop = register_with_claude_desktop(repo_path)
-    if desktop:
-        console_obj.print(f"  [green]✓[/green] Claude Desktop MCP registered ({desktop})")
-
-    code = register_with_claude_code(repo_path)
-    if code:
-        console_obj.print(f"  [green]✓[/green] Claude Code MCP registered ({code})")
+    codex_config = save_codex_mcp_config(repo_path)
+    console_obj.print(f"  [green]✓[/green] Codex MCP configured ({codex_config})")
 
 
 def _maybe_generate_claude_md(
     console_obj: Any,
     repo_path: Path,
     *,
+    claude_md: bool = False,
     no_claude_md: bool = False,
 ) -> None:
     """Generate CLAUDE.md if enabled in config and not opted out."""
     cfg = load_config(repo_path)
-    enabled = cfg.get("editor_files", {}).get("claude_md", True)
-    if no_claude_md:
-        # Persist opt-out so 'repowise update' respects it
-        ef_cfg = dict(cfg.get("editor_files", {}))
-        ef_cfg["claude_md"] = False
-        cfg["editor_files"] = ef_cfg
-        from repowise.cli.helpers import save_config
+    ef_cfg = dict(cfg.get("editor_files", {}))
+    ef_cfg["claude_md"] = bool(claude_md and not no_claude_md)
 
-        save_config(
-            repo_path,
-            cfg.get("provider", ""),
-            cfg.get("model", ""),
-            cfg.get("embedder", "mock"),
-            exclude_patterns=cfg.get("exclude_patterns"),
-            commit_limit=cfg.get("commit_limit"),
-        )
+    from repowise.cli.helpers import save_config
+
+    save_config(
+        repo_path,
+        cfg.get("provider", ""),
+        cfg.get("model", ""),
+        cfg.get("embedder", "mock"),
+        exclude_patterns=cfg.get("exclude_patterns"),
+        commit_limit=cfg.get("commit_limit"),
+        editor_files=ef_cfg,
+    )
+
+    if not ef_cfg["claude_md"]:
         return
-    if not enabled:
-        return
+
     try:
         with console_obj.status("  Generating .claude/CLAUDE.md…", spinner="dots"):
             run_async(_write_claude_md_async(repo_path))
@@ -259,11 +254,18 @@ async def _persist_result(
     help="Use git log --follow to track files across renames (slower but more accurate history). Saved to config.",
 )
 @click.option(
+    "--claude-md",
+    "claude_md",
+    is_flag=True,
+    default=False,
+    help="Generate .claude/CLAUDE.md for Claude Code users. Off by default.",
+)
+@click.option(
     "--no-claude-md",
     "no_claude_md",
     is_flag=True,
     default=False,
-    help="Skip generating CLAUDE.md. Saves 'editor_files.claude_md: false' to config.",
+    help="Compatibility alias: skip generating CLAUDE.md.",
 )
 def init_command(
     path: str | None,
@@ -282,6 +284,7 @@ def init_command(
     exclude: tuple[str, ...],
     commit_limit: int | None,
     follow_renames: bool,
+    claude_md: bool,
     no_claude_md: bool,
 ) -> None:
     """Generate wiki documentation for a codebase.
@@ -626,7 +629,7 @@ def init_command(
         run_async(_persist_result(result, repo_path))
     console.print("  [green]✓[/green] Database updated")
 
-    # ---- Post-run: config, state, MCP, CLAUDE.md ----
+    # ---- Post-run: config, state, MCP, optional CLAUDE.md ----
     if commit_limit is not None:
         cfg = load_config(repo_path)
         cfg["commit_limit"] = resolved_commit_limit
@@ -643,10 +646,10 @@ def init_command(
 
     save_mcp_config(repo_path)
     save_root_mcp_config(repo_path)
-    _register_mcp_with_claude(console, repo_path)
+    _register_mcp_with_codex(console, repo_path)
     _start_mcp_daemon(repo_path)
 
-    _maybe_generate_claude_md(console, repo_path, no_claude_md=no_claude_md)
+    _maybe_generate_claude_md(console, repo_path, claude_md=claude_md, no_claude_md=no_claude_md)
 
     # ---- State + config (full mode only) ----
     if not index_only and provider:

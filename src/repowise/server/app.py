@@ -40,6 +40,7 @@ from repowise.server.routers import (
     health,
     jobs,
     knowledge_map,
+    logs,
     pages,
     providers,
     repos,
@@ -222,6 +223,7 @@ def create_app() -> FastAPI:
     app.include_router(pages.router)
     app.include_router(search.router)
     app.include_router(jobs.router)
+    app.include_router(logs.router)
     app.include_router(symbols.router)
     app.include_router(graph.router)
     app.include_router(webhooks.router)

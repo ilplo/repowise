@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import shlex
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -45,6 +46,17 @@ def _ensure_repo_source_available(local_path: str) -> None:
         raise HTTPException(status_code=409, detail=str(error)) from error
 
 
+async def _ensure_no_active_repo_job(session: AsyncSession, repo_id: str) -> None:
+    active = await session.execute(
+        select(GenerationJob.id)
+        .where(GenerationJob.repository_id == repo_id)
+        .where(GenerationJob.status.in_(["pending", "running"]))
+        .limit(1)
+    )
+    if active.scalar_one_or_none() is not None:
+        raise HTTPException(status_code=409, detail="A repository operation is already in progress")
+
+
 @router.post("", response_model=RepoResponse, status_code=201)
 async def create_repo(
     body: RepoCreate,
@@ -63,11 +75,10 @@ async def create_repo(
         settings=body.settings,
     )
 
-    # Write .mcp.json and register with editors, matching what `repowise init` does.
+    # Write MCP config files, matching what `repowise init` does.
     try:
         from repowise.cli.mcp_config import (
-            register_with_claude_code,
-            register_with_claude_desktop,
+            save_codex_mcp_config,
             save_mcp_config,
             save_root_mcp_config,
         )
@@ -75,8 +86,7 @@ async def create_repo(
         repo_path = Path(local_path)
         await asyncio.to_thread(save_mcp_config, repo_path)
         await asyncio.to_thread(save_root_mcp_config, repo_path)
-        await asyncio.to_thread(register_with_claude_desktop, repo_path)
-        await asyncio.to_thread(register_with_claude_code, repo_path)
+        await asyncio.to_thread(save_codex_mcp_config, repo_path)
     except Exception:
         logger.warning("mcp_config_write_failed", extra={"local_path": local_path}, exc_info=True)
 
@@ -200,23 +210,43 @@ async def sync_repo(
     _ensure_repo_source_available(repo.local_path)
 
     # Prevent concurrent pipeline runs on the same repo
-    active = await session.execute(
-        select(GenerationJob.id)
-        .where(GenerationJob.repository_id == repo_id)
-        .where(GenerationJob.status.in_(["pending", "running"]))
-        .limit(1)
-    )
-    if active.scalar_one_or_none() is not None:
-        raise HTTPException(status_code=409, detail="A sync job is already in progress for this repository")
+    await _ensure_no_active_repo_job(session, repo_id)
 
     job = await crud.upsert_generation_job(
         session,
         repository_id=repo_id,
         status="pending",
+        config={"mode": "sync"},
     )
     # Commit (not just flush) so the background task's separate session can
     # see the job row.  SQLite WAL isolation hides uncommitted rows from
     # other connections, so flush() alone is not sufficient.
+    await session.commit()
+    _launch_job_task(request, job.id)
+    return JobResponse.from_orm(job)
+
+
+@router.post("/{repo_id}/update", response_model=JobResponse, status_code=202)
+async def run_update_command(
+    repo_id: str,
+    request: Request,
+    session: AsyncSession = Depends(get_db_session),  # noqa: B008
+) -> dict:
+    """Run ``repowise update <repo path>`` for a repository."""
+    repo = await crud.get_repository(session, repo_id)
+    if repo is None:
+        raise HTTPException(status_code=404, detail="Repository not found")
+    _ensure_repo_source_available(repo.local_path)
+
+    await _ensure_no_active_repo_job(session, repo_id)
+
+    command = shlex.join(["repowise", "update", repo.local_path])
+    job = await crud.upsert_generation_job(
+        session,
+        repository_id=repo_id,
+        status="pending",
+        config={"mode": "cli_update", "command": command},
+    )
     await session.commit()
     _launch_job_task(request, job.id)
     return JobResponse.from_orm(job)
@@ -239,14 +269,7 @@ async def full_resync(
     _ensure_repo_source_available(repo.local_path)
 
     # Prevent concurrent pipeline runs on the same repo
-    active = await session.execute(
-        select(GenerationJob.id)
-        .where(GenerationJob.repository_id == repo_id)
-        .where(GenerationJob.status.in_(["pending", "running"]))
-        .limit(1)
-    )
-    if active.scalar_one_or_none() is not None:
-        raise HTTPException(status_code=409, detail="A sync job is already in progress for this repository")
+    await _ensure_no_active_repo_job(session, repo_id)
 
     try:
         from repowise.server.provider_config import get_chat_provider_instance

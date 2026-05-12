@@ -33,6 +33,8 @@ err_console = Console(stderr=True)
 STATE_FILENAME = "state.json"
 REPOWISE_DIR = ".repowise"
 SYNC_STATE_KEY = "_sync_state"
+DEFAULT_PROVIDER = "xai"
+SUPPORTED_LLM_PROVIDERS = {"xai"}
 
 
 # ---------------------------------------------------------------------------
@@ -268,6 +270,7 @@ def save_config(
     *,
     exclude_patterns: list[str] | None = None,
     commit_limit: int | None = None,
+    editor_files: dict[str, Any] | None = None,
 ) -> None:
     """Persist repo settings in the central database."""
     ensure_repowise_dir(repo_path)
@@ -279,6 +282,8 @@ def save_config(
         existing["exclude_patterns"] = exclude_patterns
     if commit_limit is not None:
         existing["commit_limit"] = commit_limit
+    if editor_files is not None:
+        existing["editor_files"] = editor_files
     run_async(_merge_repo_settings_async(repo_path, existing))
 
 
@@ -298,19 +303,31 @@ def resolve_provider(
       1. Explicit ``--provider`` flag
       2. ``REPOWISE_PROVIDER`` env var
       3. Central repository settings persisted by ``repowise init``
-      4. Auto-detect from API key env vars
+      4. xAI/Grok provider
     """
     from repowise.core.providers import get_provider
 
     if provider_name is None:
-        provider_name = os.environ.get("REPOWISE_PROVIDER")
+        env_provider = os.environ.get("REPOWISE_PROVIDER")
+        if env_provider:
+            provider_name = env_provider
 
     if provider_name is None and repo_path is not None:
         cfg = load_config(repo_path)
-        if cfg.get("provider"):
-            provider_name = cfg["provider"]
+        configured_provider = cfg.get("provider")
+        if configured_provider in SUPPORTED_LLM_PROVIDERS:
+            provider_name = configured_provider
             if model is None and cfg.get("model"):
                 model = cfg["model"]
+
+    if provider_name is None:
+        provider_name = DEFAULT_PROVIDER
+
+    if provider_name not in SUPPORTED_LLM_PROVIDERS:
+        supported = ", ".join(sorted(SUPPORTED_LLM_PROVIDERS))
+        raise click.ClickException(
+            f"Unsupported provider '{provider_name}'. Available providers: {supported}."
+        )
 
     if provider_name is not None:
         # Validate configuration before attempting to create provider
@@ -325,69 +342,11 @@ def resolve_provider(
         if model:
             kwargs["model"] = model
 
-        # Pass API key from environment if available
-        if provider_name == "anthropic" and os.environ.get("ANTHROPIC_API_KEY"):
-            kwargs["api_key"] = os.environ["ANTHROPIC_API_KEY"]
-        elif provider_name == "xai" and os.environ.get("XAI_API_KEY"):
+        if provider_name == "xai" and os.environ.get("XAI_API_KEY"):
             kwargs["api_key"] = os.environ["XAI_API_KEY"]
             if os.environ.get("XAI_BASE_URL"):
                 kwargs["base_url"] = os.environ["XAI_BASE_URL"]
-        elif provider_name == "openai" and os.environ.get("OPENAI_API_KEY"):
-            kwargs["api_key"] = os.environ["OPENAI_API_KEY"]
-        elif provider_name == "gemini" and (
-            os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-        ):
-            kwargs["api_key"] = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-        elif provider_name == "ollama" and os.environ.get("OLLAMA_BASE_URL"):
-            kwargs["base_url"] = os.environ["OLLAMA_BASE_URL"]
-
         return get_provider(provider_name, **kwargs)
-
-    # Auto-detect from env vars
-    if os.environ.get("ANTHROPIC_API_KEY") and os.environ["ANTHROPIC_API_KEY"].strip():
-        anthropic_kwargs: dict[str, Any] = (
-            {"model": model, "api_key": os.environ["ANTHROPIC_API_KEY"]}
-            if model
-            else {"api_key": os.environ["ANTHROPIC_API_KEY"]}
-        )
-        return get_provider("anthropic", **anthropic_kwargs)
-    if os.environ.get("XAI_API_KEY") and os.environ["XAI_API_KEY"].strip():
-        xai_kwargs: dict[str, Any] = (
-            {"model": model, "api_key": os.environ["XAI_API_KEY"]}
-            if model
-            else {"api_key": os.environ["XAI_API_KEY"]}
-        )
-        if os.environ.get("XAI_BASE_URL"):
-            xai_kwargs["base_url"] = os.environ["XAI_BASE_URL"]
-        return get_provider("xai", **xai_kwargs)
-    if os.environ.get("OPENAI_API_KEY") and os.environ["OPENAI_API_KEY"].strip():
-        openai_kwargs: dict[str, Any] = (
-            {"model": model, "api_key": os.environ["OPENAI_API_KEY"]}
-            if model
-            else {"api_key": os.environ["OPENAI_API_KEY"]}
-        )
-        return get_provider("openai", **openai_kwargs)
-    if os.environ.get("OLLAMA_BASE_URL") and os.environ["OLLAMA_BASE_URL"].strip():
-        ollama_kwargs: dict[str, Any] = (
-            {"model": model, "base_url": os.environ["OLLAMA_BASE_URL"]}
-            if model
-            else {"base_url": os.environ["OLLAMA_BASE_URL"]}
-        )
-        return get_provider("ollama", **ollama_kwargs)
-    if (os.environ.get("GEMINI_API_KEY") and os.environ["GEMINI_API_KEY"].strip()) or (
-        os.environ.get("GOOGLE_API_KEY") and os.environ["GOOGLE_API_KEY"].strip()
-    ):
-        api_key = os.environ.get("GEMINI_API_KEY") or os.environ.get("GOOGLE_API_KEY")
-        gemini_kwargs: dict[str, Any] = (
-            {"model": model, "api_key": api_key} if model else {"api_key": api_key}
-        )
-        return get_provider("gemini", **gemini_kwargs)
-
-    raise click.ClickException(
-        "No provider configured. Use --provider, set REPOWISE_PROVIDER, "
-        "or set ANTHROPIC_API_KEY / XAI_API_KEY / OPENAI_API_KEY / "
-        "OLLAMA_BASE_URL / GEMINI_API_KEY / GOOGLE_API_KEY."
-    )
 
 
 # ---------------------------------------------------------------------------
@@ -418,12 +377,7 @@ def validate_provider_config(provider_name: str | None = None) -> list[str]:
 
     # Define required environment variables for each provider
     provider_env_vars = {
-        "anthropic": ["ANTHROPIC_API_KEY"],
         "xai": ["XAI_API_KEY"],
-        "openai": ["OPENAI_API_KEY"],
-        "gemini": ["GEMINI_API_KEY", "GOOGLE_API_KEY"],  # Either one
-        "ollama": ["OLLAMA_BASE_URL"],
-        "litellm": ["LITELLM_API_KEY"],  # May need others depending on backend
     }
 
     if provider_name:
@@ -433,16 +387,13 @@ def validate_provider_config(provider_name: str | None = None) -> list[str]:
             return warnings
 
         env_vars = provider_env_vars[provider_name]
+        if not env_vars:
+            return warnings
         missing_vars = []
 
-        if provider_name == "gemini":
-            # Special case: either GEMINI_API_KEY or GOOGLE_API_KEY
-            if not (_is_env_var_set("GEMINI_API_KEY") or _is_env_var_set("GOOGLE_API_KEY")):
-                missing_vars = env_vars
-        else:
-            for var in env_vars:
-                if not _is_env_var_set(var):
-                    missing_vars.append(var)
+        for var in env_vars:
+            if not _is_env_var_set(var):
+                missing_vars.append(var)
 
         if missing_vars:
             warnings.append(
@@ -451,16 +402,8 @@ def validate_provider_config(provider_name: str | None = None) -> list[str]:
     else:
         # Check all providers - warn about any that could be configured but are missing keys
         for name, env_vars in provider_env_vars.items():
-            if name == "gemini":
-                if os.environ.get("REPOWISE_PROVIDER") == "gemini" and not (
-                    _is_env_var_set("GEMINI_API_KEY") or _is_env_var_set("GOOGLE_API_KEY")
-                ):
-                    # Only warn if it looks like they might be trying to use gemini
-                    warnings.append(
-                        "Provider 'gemini' requires GEMINI_API_KEY or GOOGLE_API_KEY environment variable"
-                    )
+            if not env_vars:
                 continue
-
             missing = [var for var in env_vars if not _is_env_var_set(var)]
             if missing:
                 # Only warn if this provider is explicitly requested OR

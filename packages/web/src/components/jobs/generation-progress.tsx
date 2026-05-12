@@ -14,7 +14,7 @@ interface Props {
   jobId: string;
   repoName?: string;
   /** Called when the job reaches a terminal state, with the job's finished_at timestamp */
-  onDone?: (finishedAt: string | null) => void;
+  onDone?: (finishedAt: string | null, status: "completed" | "failed") => void;
 }
 
 export function GenerationProgress({ jobId, repoName, onDone }: Props) {
@@ -48,10 +48,17 @@ export function GenerationProgress({ jobId, repoName, onDone }: Props) {
 
   const liveProgress = sse.data as JobProgressEvent | null;
   const mode = (job?.config?.mode as string | undefined) ?? "sync";
+  const isCliUpdate = mode === "cli_update";
   const isFullResync = mode === "full_resync";
   const completedPages = liveProgress?.completed_pages ?? job?.completed_pages ?? 0;
   const totalPages = liveProgress?.total_pages ?? job?.total_pages ?? 0;
   const currentLevel = liveProgress?.current_level ?? job?.current_level;
+  const progressUnit = isCliUpdate ? "command" : isFullResync ? "pages" : "files";
+  const runningLabel = isCliUpdate
+    ? "Updating"
+    : `${isFullResync ? "Re-indexing" : "Scanning"}${currentLevel != null ? ` level ${currentLevel}` : ""}`;
+  const doneLabel = isCliUpdate ? "Update complete" : isFullResync ? "Re-index complete" : "Scan complete";
+  const failedLabel = isCliUpdate ? "Update failed" : isFullResync ? "Re-index failed" : "Scan failed";
   const failedPages = job?.failed_pages ?? 0;
   const generatedPages =
     typeof job?.config?.pages_generated === "number"
@@ -63,20 +70,22 @@ export function GenerationProgress({ jobId, repoName, onDone }: Props) {
     if (notifiedRef.current) return;
     if (job?.status === "completed") {
       notifiedRef.current = true;
-      toast.success(`Documentation updated${repoName ? ` — ${repoName}` : ""}`, {
-        description: isFullResync
+      toast.success(`${isCliUpdate ? "Update command completed" : "Documentation updated"}${repoName ? ` — ${repoName}` : ""}`, {
+        description: isCliUpdate
+          ? (job.config?.command as string | undefined) ?? "repowise update"
+          : isFullResync
           ? `${formatNumber(generatedPages)} pages generated`
           : `${formatNumber(job.completed_pages)} files scanned`,
       });
-      onDone?.(job.finished_at ?? new Date().toISOString());
+      onDone?.(job.finished_at ?? new Date().toISOString(), "completed");
     } else if (job?.status === "failed") {
       notifiedRef.current = true;
-      toast.error("Generation failed", {
+      toast.error(isCliUpdate ? "Update command failed" : "Generation failed", {
         description: job.error_message ?? "Unknown error",
       });
-      onDone?.(job.finished_at ?? null);
+      onDone?.(job.finished_at ?? null, "failed");
     }
-  }, [job?.status, job?.completed_pages, job?.config, job?.error_message, generatedPages, isFullResync, repoName, onDone]);
+  }, [job?.status, job?.completed_pages, job?.config, job?.error_message, job?.finished_at, generatedPages, isCliUpdate, isFullResync, repoName, onDone]);
 
   const progress = job || liveProgress
     ? totalPages > 0
@@ -98,9 +107,9 @@ export function GenerationProgress({ jobId, repoName, onDone }: Props) {
         {isFailed && <XCircle className="h-4 w-4 text-[var(--color-outdated)] shrink-0" />}
 
         <span className="text-sm font-medium text-[var(--color-text-primary)]">
-          {isRunning && `${isFullResync ? "Re-indexing" : "Scanning"}${currentLevel != null ? ` level ${currentLevel}` : ""}…`}
-          {isDone && (isFullResync ? "Re-index complete" : "Scan complete")}
-          {isFailed && (isFullResync ? "Re-index failed" : "Scan failed")}
+          {isRunning && `${runningLabel}…`}
+          {isDone && doneLabel}
+          {isFailed && failedLabel}
         </span>
 
         <span className="ml-auto text-xs text-[var(--color-text-tertiary)] tabular-nums">
@@ -117,7 +126,7 @@ export function GenerationProgress({ jobId, repoName, onDone }: Props) {
         <div className="flex justify-between text-xs text-[var(--color-text-tertiary)]">
           <span>
             {formatNumber(completedPages)} /{" "}
-            {formatNumber(totalPages)} {isFullResync ? "pages" : "files"}
+            {formatNumber(totalPages)} {progressUnit}
           </span>
           {failedPages > 0 && (
             <Badge variant="stale" className="text-xs py-0">
@@ -148,7 +157,7 @@ export function GenerationProgress({ jobId, repoName, onDone }: Props) {
             <p className="text-lg font-semibold text-[var(--color-text-primary)]">
               {formatNumber(isFullResync ? generatedPages : completedPages)}
             </p>
-            <p className="text-xs text-[var(--color-text-tertiary)]">{isFullResync ? "pages" : "files"}</p>
+            <p className="text-xs text-[var(--color-text-tertiary)]">{progressUnit}</p>
           </div>
           <div className="rounded border border-[var(--color-border-default)] p-2 text-center">
             <p className="text-lg font-semibold text-[var(--color-text-primary)]">

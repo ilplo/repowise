@@ -4,7 +4,7 @@
 /*
  * repowise Design System
  * "Linear's exactness + Stripe's docs quality"
- * Dark mode primary. No light mode in v1.
+ * Day/night themes share the same semantic token surface.
  */
 
 @theme {
@@ -154,11 +154,57 @@
   --duration-slow: 400ms;
 }
 
+:root {
+  --color-bg-root: #f7f7f4;
+  --color-bg-surface: #ffffff;
+  --color-bg-elevated: #f0f1ed;
+  --color-bg-overlay: #ffffff;
+  --color-bg-inset: #ebece6;
+
+  --color-border-default: rgba(15, 23, 42, 0.10);
+  --color-border-hover: rgba(15, 23, 42, 0.18);
+  --color-border-active: rgba(15, 23, 42, 0.30);
+
+  --color-text-primary: #18181b;
+  --color-text-secondary: #52525b;
+  --color-text-tertiary: #8a8f98;
+  --color-text-inverse: #ffffff;
+
+  --color-accent-muted: rgba(245, 149, 32, 0.14);
+  --color-scrollbar-thumb: rgba(15, 23, 42, 0.16);
+  --color-scrollbar-thumb-hover: rgba(15, 23, 42, 0.28);
+}
+
+:root.dark {
+  --color-bg-root: #0d0d0d;
+  --color-bg-surface: #141414;
+  --color-bg-elevated: #1c1c1c;
+  --color-bg-overlay: #202020;
+  --color-bg-inset: #0a0a0a;
+
+  --color-border-default: rgba(255, 255, 255, 0.06);
+  --color-border-hover: rgba(255, 255, 255, 0.12);
+  --color-border-active: rgba(255, 255, 255, 0.20);
+
+  --color-text-primary: #ececec;
+  --color-text-secondary: #999999;
+  --color-text-tertiary: #5c5c5c;
+  --color-text-inverse: #0d0d0d;
+
+  --color-accent-muted: rgba(245, 149, 32, 0.15);
+  --color-scrollbar-thumb: rgba(255, 255, 255, 0.1);
+  --color-scrollbar-thumb-hover: rgba(255, 255, 255, 0.2);
+}
+
 /* -------------------------------------------------------------------- */
 /* Base Styles                                                           */
 /* -------------------------------------------------------------------- */
 
 html {
+  color-scheme: light;
+}
+
+html.dark {
   color-scheme: dark;
 }
 
@@ -186,12 +232,12 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: var(--color-scrollbar-thumb);
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: var(--color-scrollbar-thumb-hover);
 }
 
 /* -------------------------------------------------------------------- */

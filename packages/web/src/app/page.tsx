@@ -29,6 +29,9 @@ export const revalidate = 30;
 
 function formatJobWork(job: JobResponse): string {
   const mode = (job.config?.mode as string | undefined) ?? "sync";
+  if (mode === "cli_update") {
+    return "1 command";
+  }
   if (mode === "full_resync") {
     const generated =
       typeof job.config?.pages_generated === "number"
@@ -221,7 +224,11 @@ export default async function DashboardPage() {
                           {job.status === "running" ? (
                             <span className="text-[var(--color-accent-primary)]">
                               {formatNumber(job.completed_pages)}/{formatNumber(job.total_pages)}{" "}
-                              {((job.config?.mode as string | undefined) ?? "sync") === "full_resync" ? "pages" : "files"}
+                              {((job.config?.mode as string | undefined) ?? "sync") === "full_resync"
+                                ? "pages"
+                                : ((job.config?.mode as string | undefined) ?? "sync") === "cli_update"
+                                  ? "commands"
+                                  : "files"}
                             </span>
                           ) : (
                             formatJobWork(job)

@@ -598,14 +598,14 @@ function GraphFlowInner({
           nodesDraggable={false}
           defaultEdgeOptions={{ type: "dependency" }}
         >
-          <Background variant={BackgroundVariant.Dots} gap={16} size={0.5} color="rgba(255,255,255,0.03)" />
+          <Background variant={BackgroundVariant.Dots} gap={16} size={0.5} color="var(--color-border-default)" />
           <Controls
             showInteractive={false}
             className="!border-[var(--color-border-default)] !bg-[var(--color-bg-elevated)] !shadow-lg !shadow-black/20 [&>button]:!border-[var(--color-border-default)] [&>button]:!bg-[var(--color-bg-elevated)] [&>button]:!text-[var(--color-text-secondary)] [&>button:hover]:!bg-[var(--color-bg-overlay)] [&>button:hover]:!text-[var(--color-text-primary)]"
           />
           <MiniMap
             nodeColor={minimapNodeColor}
-            maskColor="rgba(0, 0, 0, 0.6)"
+            maskColor="color-mix(in srgb, var(--color-bg-root) 72%, transparent)"
             className="!bg-[var(--color-bg-surface)] !border-[var(--color-border-default)] !shadow-lg !shadow-black/20 !rounded-lg"
             pannable
             zoomable

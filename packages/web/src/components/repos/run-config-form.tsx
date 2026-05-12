@@ -27,14 +27,15 @@ interface Props {
   onChange: (v: RunConfig) => void;
 }
 
-const PROVIDERS = ["litellm", "openai", "anthropic", "ollama", "mock"] as const;
+const PROVIDER = "xai";
+const DEFAULT_MODEL = "grok-4-1-fast-reasoning";
 
 export function RunConfigForm({ value, onChange }: Props) {
   // Seed from saved settings on mount
   useEffect(() => {
     onChange({
-      provider: config.getProvider(),
-      model: config.getModel(),
+      provider: PROVIDER,
+      model: config.getModel() || DEFAULT_MODEL,
       skipTests: false,
       skipInfra: false,
       concurrency: 4,
@@ -52,16 +53,12 @@ export function RunConfigForm({ value, onChange }: Props) {
       <div className="grid grid-cols-2 gap-3">
         <div className="space-y-1.5">
           <Label>Provider</Label>
-          <Select value={value.provider} onValueChange={(v) => set("provider", v)}>
+          <Select value={PROVIDER} onValueChange={() => set("provider", PROVIDER)}>
             <SelectTrigger>
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {PROVIDERS.map((p) => (
-                <SelectItem key={p} value={p}>
-                  {p}
-                </SelectItem>
-              ))}
+              <SelectItem value={PROVIDER}>xai</SelectItem>
             </SelectContent>
           </Select>
         </div>
@@ -72,7 +69,6 @@ export function RunConfigForm({ value, onChange }: Props) {
             id="run-model"
             value={value.model}
             onChange={(e) => set("model", e.target.value)}
-            placeholder="gemini/gemini-2.0-flash"
             className="font-mono"
           />
         </div>

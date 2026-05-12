@@ -24,9 +24,16 @@ export function formatCost(usd: number): string {
   }).format(usd);
 }
 
+function parseApiDate(date: string | Date): Date {
+  if (date instanceof Date) return date;
+  const hasTime = date.includes("T");
+  const hasTimezone = /(?:Z|[+-]\d{2}:?\d{2})$/i.test(date);
+  return new Date(hasTime && !hasTimezone ? `${date}Z` : date);
+}
+
 /** Format a datetime to a relative string: "2h ago", "3d ago", "just now" */
 export function formatRelativeTime(date: string | Date): string {
-  const d = typeof date === "string" ? new Date(date) : date;
+  const d = parseApiDate(date);
   const now = Date.now();
   const diff = now - d.getTime();
   const seconds = Math.floor(diff / 1000);
@@ -48,7 +55,7 @@ export function formatRelativeTime(date: string | Date): string {
 
 /** Format a datetime to an absolute string: "Mar 19, 2026" */
 export function formatDate(date: string | Date): string {
-  const d = typeof date === "string" ? new Date(date) : date;
+  const d = parseApiDate(date);
   return new Intl.DateTimeFormat("en-US", {
     month: "short",
     day: "numeric",
@@ -58,7 +65,7 @@ export function formatDate(date: string | Date): string {
 
 /** Format a datetime to full: "Mar 19, 2026 at 10:30 AM" */
 export function formatDateTime(date: string | Date): string {
-  const d = typeof date === "string" ? new Date(date) : date;
+  const d = parseApiDate(date);
   return new Intl.DateTimeFormat("en-US", {
     month: "short",
     day: "numeric",

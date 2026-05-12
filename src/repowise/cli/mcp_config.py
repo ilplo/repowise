@@ -1,4 +1,4 @@
-"""Auto-generated MCP config for Claude Code, Claude Desktop, Cursor, and Cline."""
+"""Auto-generated MCP config for Codex and other MCP clients."""
 
 from __future__ import annotations
 
@@ -14,26 +14,32 @@ def _standalone_source_root() -> Path:
     return Path(__file__).resolve().parents[2]
 
 
-def _claude_desktop_config_path() -> Path | None:
-    """Return the Claude Desktop config path for this OS, or None if unsupported."""
-    if sys.platform == "darwin":
-        return (
-            Path.home()
-            / "Library"
-            / "Application Support"
-            / "Claude"
-            / "claude_desktop_config.json"
-        )
-    if sys.platform == "win32":
-        appdata = Path.home() / "AppData" / "Roaming"
-        return appdata / "Claude" / "claude_desktop_config.json"
-    # Linux / other: Claude Desktop not officially supported yet
-    return None
+def _toml_value(value: str | int | bool | list[str]) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, list):
+        return "[" + ", ".join(json.dumps(item) for item in value) + "]"
+    return json.dumps(value)
 
 
-def _claude_code_settings_path() -> Path:
-    """Return the global Claude Code settings path (~/.claude/settings.json)."""
-    return Path.home() / ".claude" / "settings.json"
+def _remove_toml_tables(text: str, table_names: set[str]) -> str:
+    lines = text.splitlines()
+    kept: list[str] = []
+    skipping = False
+
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("[") and stripped.endswith("]"):
+            table_name = stripped.lstrip("[").rstrip("]")
+            skipping = table_name in table_names
+            if skipping:
+                continue
+        if not skipping:
+            kept.append(line)
+
+    return "\n".join(kept).rstrip()
 
 
 def generate_mcp_config(repo_path: Path) -> dict:
@@ -59,6 +65,25 @@ def generate_mcp_config(repo_path: Path) -> dict:
     }
 
 
+def generate_codex_mcp_config_toml(repo_path: Path) -> str:
+    """Generate a Codex project-scoped MCP config block for a repository."""
+    server = generate_mcp_config(repo_path)["mcpServers"]["repowise"]
+    lines = [
+        "[mcp_servers.repowise]",
+        f"command = {_toml_value(server['command'])}",
+        f"args = {_toml_value(server['args'])}",
+        'startup_timeout_sec = 30',
+        "",
+    ]
+    env = server.get("env", {})
+    if env:
+        lines.append("[mcp_servers.repowise.env]")
+        for key, value in env.items():
+            lines.append(f"{key} = {_toml_value(value)}")
+        lines.append("")
+    return "\n".join(lines)
+
+
 def save_mcp_config(repo_path: Path) -> Path:
     """Save MCP config to the central repo runtime directory and return the path."""
     repowise_dir = ensure_repo_runtime_dir(repo_path)
@@ -69,8 +94,30 @@ def save_mcp_config(repo_path: Path) -> Path:
     return config_path
 
 
+def save_codex_mcp_config(repo_path: Path) -> Path:
+    """Write project-scoped Codex MCP config at <repo>/.codex/config.toml."""
+    config_dir = repo_path / ".codex"
+    config_path = config_dir / "config.toml"
+    new_block = generate_codex_mcp_config_toml(repo_path).rstrip()
+    table_names = {"mcp_servers.repowise", "mcp_servers.repowise.env"}
+
+    if config_path.exists():
+        try:
+            existing = config_path.read_text(encoding="utf-8")
+        except OSError:
+            existing = ""
+        base = _remove_toml_tables(existing, table_names)
+        merged = f"{base}\n\n{new_block}\n" if base else f"{new_block}\n"
+    else:
+        merged = f"{new_block}\n"
+
+    config_dir.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(merged, encoding="utf-8")
+    return config_path
+
+
 def save_root_mcp_config(repo_path: Path) -> Path:
-    """Write .mcp.json at repo root for Claude Code auto-discovery.
+    """Write .mcp.json at repo root for MCP clients that auto-discover it.
 
     Merges the repowise server entry into any existing mcpServers block
     so other MCP servers configured by the user are preserved.
@@ -94,67 +141,18 @@ def save_root_mcp_config(repo_path: Path) -> Path:
     return config_path
 
 
-def _merge_mcp_entry(config_path: Path, new_entry: dict) -> bool:
-    """Merge *new_entry* into the mcpServers block of *config_path*.
-
-    Creates the file if it doesn't exist. Returns True on success.
-    """
-    try:
-        if config_path.exists():
-            try:
-                existing = json.loads(config_path.read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, OSError):
-                existing = {}
-        else:
-            config_path.parent.mkdir(parents=True, exist_ok=True)
-            existing = {}
-
-        servers = dict(existing.get("mcpServers", {}))
-        servers.update(new_entry)
-        existing["mcpServers"] = servers
-        config_path.write_text(json.dumps(existing, indent=2) + "\n", encoding="utf-8")
-        return True
-    except OSError:
-        return False
-
-
-def register_with_claude_desktop(repo_path: Path) -> Path | None:
-    """Add repowise MCP server to Claude Desktop's config.
-
-    Returns the config path if successful, None if Claude Desktop is not
-    present or the platform is unsupported.
-    """
-    config_path = _claude_desktop_config_path()
-    if config_path is None:
-        return None
-    if not config_path.parent.exists():
-        # Claude Desktop not installed
-        return None
-    entry = generate_mcp_config(repo_path)["mcpServers"]
-    return config_path if _merge_mcp_entry(config_path, entry) else None
-
-
-def register_with_claude_code(repo_path: Path) -> Path | None:
-    """Add repowise MCP server to global Claude Code settings (~/.claude/settings.json).
-
-    Returns the settings path if successful, None on failure.
-    """
-    settings_path = _claude_code_settings_path()
-    entry = generate_mcp_config(repo_path)["mcpServers"]
-    return settings_path if _merge_mcp_entry(settings_path, entry) else None
-
-
 def format_setup_instructions(repo_path: Path) -> str:
     """Return human-readable setup instructions for MCP clients."""
     config = generate_mcp_config(repo_path)
     server_block = json.dumps(config["mcpServers"]["repowise"], indent=4)
     abs_path = str(repo_path.resolve()).replace("\\", "/")
+    codex_config_path = repo_path / ".codex" / "config.toml"
 
     return f"""
 MCP Server Configuration
 ========================
 
-Claude Code: automatically configured via .mcp.json (no manual steps needed).
+Codex: automatically configured via {codex_config_path}
 
 Cursor (.cursor/mcp.json):
   {server_block}

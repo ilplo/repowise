@@ -98,7 +98,7 @@ export function ContributorNetwork({ hotspots }: ContributorNetworkProps) {
     // Draw links
     const linkElements: SVGLineElement[] = links.map((l) => {
       const line = document.createElementNS(ns, "line");
-      line.setAttribute("stroke", "rgba(255,255,255,0.1)");
+      line.setAttribute("stroke", "var(--color-border-default)");
       line.setAttribute("stroke-width", String(Math.max(1, Math.min(4, l.sharedFiles))));
       g.appendChild(line);
       return line;

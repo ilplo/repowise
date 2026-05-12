@@ -21,27 +21,11 @@ _PRICING: dict[str, dict[str, float]] = {
     # xAI Grok — https://docs.x.ai/docs/models
     "grok-4-1-fast-reasoning": {"input": 0.20, "output": 0.50},
     "grok-4-1-fast-non-reasoning": {"input": 0.20, "output": 0.50},
+    "grok-4-fast-reasoning": {"input": 0.20, "output": 0.50},
+    "grok-3-mini-fast": {"input": 0.20, "output": 0.50},
     "grok-4.20-0309-reasoning": {"input": 2.00, "output": 6.00},
     "grok-4.20-0309-non-reasoning": {"input": 2.00, "output": 6.00},
     "grok-4.20-multi-agent-0309": {"input": 2.00, "output": 6.00},
-    # Anthropic
-    "claude-opus-4-6": {"input": 15.0, "output": 75.0},
-    "claude-sonnet-4-6": {"input": 3.0, "output": 15.0},
-    "claude-haiku-4-5": {"input": 0.8, "output": 4.0},
-    "claude-3-5-sonnet-20241022": {"input": 3.0, "output": 15.0},
-    # OpenAI
-    "gpt-4o": {"input": 2.5, "output": 10.0},
-    "gpt-4o-mini": {"input": 0.15, "output": 0.6},
-    # Google Gemini
-    "gemini-2.0-flash": {"input": 0.075, "output": 0.3},
-    "gemini-2.5-flash": {"input": 0.30, "output": 2.50},
-    "gemini-2.5-pro": {"input": 1.25, "output": 10.0},
-    "gemini-1.5-flash": {"input": 0.075, "output": 0.30},
-    "gemini-1.5-flash-lite": {"input": 0.075, "output": 0.30},
-    "gemini-1.5-pro": {"input": 1.25, "output": 5.0},
-    # Gemini preview / experimental models
-    "gemini-3.1-flash-lite-preview": {"input": 0.075, "output": 0.30},
-    "gemini-3-flash-preview": {"input": 0.075, "output": 0.30},
 }
 
 _FALLBACK_PRICING: dict[str, float] = {"input": 0.20, "output": 0.50}

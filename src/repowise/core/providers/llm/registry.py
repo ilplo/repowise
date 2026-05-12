@@ -5,10 +5,7 @@ Supports built-in providers and runtime registration of custom providers,
 enabling community-contributed providers without forking repowise.
 
 Built-in providers:
-    - anthropic  → AnthropicProvider
-    - openai     → OpenAIProvider
-    - ollama     → OllamaProvider
-    - litellm    → LiteLLMProvider
+    - xai        → XAIProvider
     - mock       → MockProvider (testing only)
 
 Custom provider registration:
@@ -31,17 +28,12 @@ from repowise.core.rate_limiter import PROVIDER_DEFAULTS, RateLimitConfig, RateL
 
 # Map of provider name → (module_path, class_name)
 # Providers are imported lazily to avoid requiring all dependencies at import time.
-# This means `pip install repowise-core` without anthropic installed still works —
-# you just can't use the anthropic provider.
+# `mock` remains registered for tests but is hidden from user-facing provider lists.
 _BUILTIN_PROVIDERS: dict[str, tuple[str, str]] = {
-    "anthropic": ("repowise.core.providers.llm.anthropic", "AnthropicProvider"),
-    "openai": ("repowise.core.providers.llm.openai", "OpenAIProvider"),
     "xai": ("repowise.core.providers.llm.xai", "XAIProvider"),
-    "gemini": ("repowise.core.providers.llm.gemini", "GeminiProvider"),
-    "ollama": ("repowise.core.providers.llm.ollama", "OllamaProvider"),
-    "litellm": ("repowise.core.providers.llm.litellm", "LiteLLMProvider"),
     "mock": ("repowise.core.providers.llm.mock", "MockProvider"),
 }
+_PUBLIC_BUILTIN_PROVIDERS = {"xai"}
 
 # Runtime-registered custom providers (factory callables)
 _custom_providers: dict[str, Callable[..., BaseProvider]] = {}
@@ -113,7 +105,7 @@ def get_provider(
         return _custom_providers[name](**kwargs)
 
     if name not in _BUILTIN_PROVIDERS:
-        available = sorted(set(_BUILTIN_PROVIDERS) | set(_custom_providers))
+        available = sorted(_PUBLIC_BUILTIN_PROVIDERS | set(_custom_providers))
         raise ValueError(
             f"Unknown provider: {name!r}. "
             f"Available providers: {available}"
@@ -135,7 +127,6 @@ def get_provider(
             "openai": "openai",
             "xai": "openai",
             "gemini": "google-genai",
-            "ollama": "openai",  # ollama uses the openai package
             "litellm": "litellm",
         }
         package = _missing.get(name, name)
@@ -153,4 +144,4 @@ def list_providers() -> list[str]:
 
     Includes both built-in and runtime-registered custom providers.
     """
-    return sorted(set(_BUILTIN_PROVIDERS) | set(_custom_providers))
+    return sorted(_PUBLIC_BUILTIN_PROVIDERS | set(_custom_providers))

@@ -38,6 +38,18 @@ PROVIDER_CATALOG: list[dict[str, Any]] = [
 _CATALOG_BY_ID = {p["id"]: p for p in PROVIDER_CATALOG}
 
 
+def _normalise_model_for_provider(provider_id: str | None, model: str | None) -> str | None:
+    if not provider_id:
+        return None
+    catalog = _CATALOG_BY_ID.get(provider_id)
+    if catalog is None:
+        return None
+    models = catalog.get("models", [])
+    if model and (not models or model in models):
+        return model
+    return catalog["default_model"]
+
+
 # ---------------------------------------------------------------------------
 # Config file I/O
 # ---------------------------------------------------------------------------
@@ -96,13 +108,16 @@ def list_provider_status() -> dict[str, Any]:
     active_id = config.get("active_provider")
     active_model = config.get("active_model")
 
+    if active_id not in _CATALOG_BY_ID:
+        active_id = None
+        active_model = None
+
     # Auto-detect active if not set
     if not active_id:
-        for p in PROVIDER_CATALOG:
-            if _get_key_for_provider(p["id"]) or not p["requires_key"]:
-                active_id = p["id"]
-                active_model = p["default_model"]
-                break
+        active_id = "xai"
+        active_model = _CATALOG_BY_ID[active_id]["default_model"]
+    else:
+        active_model = _normalise_model_for_provider(active_id, active_model)
 
     providers = []
     for p in PROVIDER_CATALOG:
@@ -121,8 +136,7 @@ def list_provider_status() -> dict[str, Any]:
     return {
         "active": {
             "provider": active_id,
-            "model": active_model
-            or (_CATALOG_BY_ID.get(active_id, {}).get("default_model") if active_id else None),
+            "model": _normalise_model_for_provider(active_id, active_model),
         },
         "providers": providers,
     }
@@ -167,12 +181,15 @@ def get_chat_provider_instance():
 
     provider_id, model = get_active_provider()
     if not provider_id:
-        raise ValueError("No active provider configured. Set an API key first.")
+        raise ValueError("No active provider configured.")
 
     api_key = _get_key_for_provider(provider_id)
     catalog = _CATALOG_BY_ID[provider_id]
 
-    kwargs: dict[str, Any] = {"model": model or catalog["default_model"]}
+    kwargs: dict[str, Any] = {}
+    selected_model = model or catalog["default_model"]
+    if selected_model:
+        kwargs["model"] = selected_model
     if api_key:
         kwargs["api_key"] = api_key
 

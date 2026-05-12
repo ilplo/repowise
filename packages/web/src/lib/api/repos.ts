@@ -21,6 +21,10 @@ export async function syncRepo(repoId: string): Promise<JobResponse> {
   return apiPost<JobResponse>(`/api/repos/${repoId}/sync`);
 }
 
+export async function runUpdateRepo(repoId: string): Promise<JobResponse> {
+  return apiPost<JobResponse>(`/api/repos/${repoId}/update`);
+}
+
 export async function fullResyncRepo(repoId: string): Promise<JobResponse> {
   return apiPost<JobResponse>(`/api/repos/${repoId}/full-resync`);
 }

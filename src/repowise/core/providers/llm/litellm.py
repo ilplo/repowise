@@ -9,8 +9,7 @@ Use this provider for:
     - Any other LiteLLM-supported endpoint
 
 LiteLLM model strings use the format: "<provider>/<model>"
-    - "together_ai/meta-llama/Llama-3-8b-chat-hf"
-    - "groq/llama-3.1-70b-versatile"
+    - "xai/grok-4-1-fast-reasoning"
     - "azure/gpt-4o"
     - "bedrock/claude-sonnet-4-6"
 
@@ -54,7 +53,7 @@ class LiteLLMProvider(BaseProvider):
     """LiteLLM proxy provider — 100+ LLMs through a single interface.
 
     Args:
-        model:        LiteLLM model string (e.g., "groq/llama-3.1-70b-versatile").
+        model:        LiteLLM model string (e.g., "xai/grok-4-1-fast-reasoning").
         api_key:      API key for the target provider. Some providers read from
                       environment variables (e.g., GROQ_API_KEY, TOGETHER_API_KEY).
         api_base:     Optional custom API base URL (e.g., for self-hosted deployments).

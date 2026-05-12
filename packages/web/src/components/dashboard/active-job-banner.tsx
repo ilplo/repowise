@@ -43,7 +43,7 @@ export function ActiveJobBanner({ repoId }: ActiveJobBannerProps) {
     : 0;
 
   const mode = (job.config?.mode as string) ?? "sync";
-  const label = mode === "full_resync" ? "Full Re-index" : "Sync";
+  const label = mode === "full_resync" ? "Full Re-index" : mode === "cli_update" ? "Update" : "Sync";
   const isFullResync = mode === "full_resync";
   const generatedPages =
     typeof job.config?.pages_generated === "number"

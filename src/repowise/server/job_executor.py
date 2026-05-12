@@ -10,6 +10,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import shlex
+import sys
 import time
 from pathlib import Path
 from typing import Any
@@ -40,6 +43,80 @@ _PHASE_LEVELS = {
 }
 
 
+def _output_tail(text: str, limit: int = 4000) -> str:
+    """Return a bounded tail of command output for job metadata/errors."""
+    if len(text) <= limit:
+        return text
+    return text[-limit:]
+
+
+async def _execute_cli_update_job(
+    *,
+    job_id: str,
+    repo_path: str,
+    config: dict[str, Any],
+    session_factory: Any,
+) -> None:
+    """Run the CLI update command for a repository-backed UI job."""
+    display_command = ["repowise", "update", repo_path]
+    command_text = shlex.join(display_command)
+    src_root = Path(__file__).resolve().parents[2]
+    env = os.environ.copy()
+    existing_pythonpath = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = (
+        str(src_root)
+        if not existing_pythonpath
+        else f"{src_root}{os.pathsep}{existing_pythonpath}"
+    )
+    env["PYTHONUNBUFFERED"] = "1"
+
+    async with get_session(session_factory) as session:
+        job = await get_generation_job(session, job_id)
+        if job is not None:
+            updated_config = config.copy()
+            updated_config["command"] = command_text
+            job.config_json = json.dumps(updated_config)
+        await update_job_status(session, job_id, "running", total_pages=1, completed_pages=0)
+
+    logger.info("cli_update_started", job_id=job_id, command=display_command)
+    proc = await asyncio.create_subprocess_exec(
+        sys.executable,
+        "-m",
+        "repowise",
+        "update",
+        repo_path,
+        cwd=repo_path,
+        env=env,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout_bytes, stderr_bytes = await proc.communicate()
+    stdout = stdout_bytes.decode("utf-8", errors="replace")
+    stderr = stderr_bytes.decode("utf-8", errors="replace")
+    output = "\n".join(part for part in (stdout.strip(), stderr.strip()) if part)
+
+    if proc.returncode != 0:
+        error = _output_tail(output or f"repowise update exited with code {proc.returncode}", 500)
+        raise RuntimeError(error)
+
+    async with get_session(session_factory) as session:
+        job = await get_generation_job(session, job_id)
+        if job is not None:
+            final_config = config.copy()
+            final_config.update(
+                {
+                    "command": command_text,
+                    "returncode": proc.returncode,
+                    "stdout_tail": _output_tail(stdout),
+                    "stderr_tail": _output_tail(stderr),
+                }
+            )
+            job.config_json = json.dumps(final_config)
+        await update_job_status(session, job_id, "completed", completed_pages=1, total_pages=1)
+
+    logger.info("cli_update_completed", job_id=job_id)
+
+
 class JobProgressCallback:
     """ProgressCallback that writes progress to the GenerationJob record.
 
@@ -57,6 +134,7 @@ class JobProgressCallback:
         self._stopped = False
         # Track in-flight update tasks to cancel before final status write
         self._pending_tasks: set[asyncio.Task] = set()  # type: ignore[type-arg]
+        self._flush_requested = False
         # Batch DB writes: flush every N items to avoid per-item overhead
         self._flush_interval = 5
 
@@ -82,20 +160,31 @@ class JobProgressCallback:
         )
 
     def _sync_job_status(self) -> None:
-        """Fire-and-forget progress update in the current event loop.
+        """Schedule a coalesced progress update in the current event loop.
 
-        Tracks task references to allow cancellation before final status.
+        SQLite only allows one writer at a time.  Pipeline phases can emit
+        progress from concurrent ingestion/git tasks, so this keeps at most one
+        job-status write in flight and folds later events into one follow-up.
         """
         if self._stopped:
             return
 
         try:
             loop = asyncio.get_running_loop()
+            if self._pending_tasks:
+                self._flush_requested = True
+                return
             t = loop.create_task(self._async_update())
             self._pending_tasks.add(t)
-            t.add_done_callback(self._pending_tasks.discard)
+            t.add_done_callback(self._on_update_done)
         except RuntimeError:
             pass  # No event loop — skip the update
+
+    def _on_update_done(self, task: asyncio.Task) -> None:
+        self._pending_tasks.discard(task)
+        if self._flush_requested and not self._stopped:
+            self._flush_requested = False
+            self._sync_job_status()
 
     async def drain_and_stop(self) -> None:
         """Wait for in-flight progress updates to finish, then prevent new ones.
@@ -109,6 +198,7 @@ class JobProgressCallback:
         finish naturally.
         """
         self._stopped = True
+        self._flush_requested = False
         if self._pending_tasks:
             await asyncio.gather(*self._pending_tasks, return_exceptions=True)
         self._pending_tasks.clear()
@@ -163,6 +253,15 @@ async def execute_job(job_id: str, app_state: Any) -> None:
             repo_path = repo.local_path
             repo_id = repo.id
             config = json.loads(job.config_json) if job.config_json else {}
+            if config.get("mode") == "cli_update":
+                await _execute_cli_update_job(
+                    job_id=job_id,
+                    repo_path=repo_path,
+                    config=config,
+                    session_factory=session_factory,
+                )
+                return
+
             is_full_resync = config.get("mode") == "full_resync"
 
             # Mark running
@@ -197,6 +296,10 @@ async def execute_job(job_id: str, app_state: Any) -> None:
             vector_store=vector_store,
             progress=progress,
         )
+
+        # Stop background progress writes before the larger persistence
+        # transaction so SQLite does not have competing writers.
+        await progress.drain_and_stop()
 
         # ---- Persist results -----------------------------------------------
         async with get_session(session_factory) as session:

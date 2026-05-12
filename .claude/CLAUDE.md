@@ -11,19 +11,29 @@
 > They deliver richer context — documentation, ownership, history, decisions —
 > in a single call. Raw `read_file` calls are a last resort only.
 
-Last indexed: 2026-04-22. Confidence: 100%.
+Last indexed: 2026-04-25. Confidence: 100%.
 ### Architecture
-Repowise is a developer tool designed to analyze code repositories and automatically generate high-level documentation, such as onboarding overviews, architecture diagrams, and technical summaries. It processes repositories to extract metrics (e.g., language distribution, entry points, PageRank centrality for key files), performs semantic analysis using embeddings, and produces structured Markdown outputs. Key repository stats:
-- **Total files**: 328
-- **Total lines of code**: 47,958
-- **Circular dependencies**: 0
-- **Monorepo**: No (single repo with one sub-package: packages/web)
-- **Primary focus**: Repository ingestion, graph-based analysis (PageRank), AI-driven generation, and persistence for scalable querying. The project features a Python backend for core logic (CLI and server), a TypeScript/JavaScript web frontend for interactive use, and supports both local CLI workflows and hosted server/API access.
+Repowise is a modern repository analysis and documentation generation tool designed to ingest codebases, generate insights, embeddings, and structured documentation using AI providers like OpenAI. It features a Python-based CLI for local workflows and a FastAPI server for API-driven interactions, paired with a TypeScript web frontend for user interfaces. **Key Stats**:
+- **Repository Name**: repo
+- **Monorepo**: No (single repo with packages/web subdirectory)
+- **Total Files**: 334
+- **Total Lines of Code**: 48,996
+- **Circular Dependencies**: 0 (clean dependency graph)
+
+**Language Distribution**:
+- TypeScript: 54.5% (web frontend and API clients)
+- Python: 41.3% (core logic, CLI, server)
+- Markdown: 1.8%
+- JSON: 1.5%
+- Others (JS, Shell, TOML): ~2.4%
+
+**Codebase Health**:
+- No hotspots (high-churn + high-complexity files). - Actively developed: Oldest file is ~2 days old; no files unchanged in 90+ days.
 ### Key Modules
 | Module | Purpose | Owner |
 |--------|---------|-------|
-| `src` | The src module (package: repowise) is a comprehensive Python-based toolkit for r | — |
-| `packages` | The packages module (primarily packages/web) is the TypeScript-based web fronten | — |
+| `src` | The src module is the core Python codebase for Repowise, a comprehensive tool fo | — |
+| `packages` | The packages module is a TypeScript module located at packages, serving as a cen | — |
 | `tests` | The tests module is the primary test suite for the Repowise project, written in  | — |
 ### Entry Points
 - `src/repowise/cli/main.py`
@@ -32,6 +42,14 @@ Repowise is a developer tool designed to analyze code repositories and automatic
 **Languages:** Python
 **Frameworks:** FastAPI, HTTPX, Pydantic
 **Databases:** Alembic, SQLAlchemy
+### Hotspots (High Churn)
+| File | Churn | 90d Commits | Owner |
+|------|-------|-------------|-------|
+| `src/repowise/cli/commands/start_cmd.py` | 100.0th %ile | 3 | ilplo |
+| `packages/web/src/components/settings/provider-section.tsx` | 99.7th %ile | 2 | ilplo |
+| `src/repowise/cli/commands/init_cmd.py` | 99.4th %ile | 4 | ilplo |
+| `packages/web/src/components/dashboard/quick-actions.tsx` | 99.1th %ile | 3 | ilplo |
+| `packages/web/package-lock.json` | 98.8th %ile | 2 | ilplo |
 
 ### Repowise MCP Tools
 

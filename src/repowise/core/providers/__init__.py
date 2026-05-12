@@ -1,7 +1,7 @@
 """repowise provider package.
 
 Sub-packages:
-    llm/       — LLM providers (Anthropic, OpenAI, Gemini, Ollama, LiteLLM)
+    llm/       — LLM providers (xAI/Grok)
     embedding/ — Embedding providers (OpenAI, Gemini, Mock)
 
 Preferred entry points:
@@ -9,7 +9,7 @@ Preferred entry points:
     from repowise.core.providers.llm import get_provider
     from repowise.core.providers.embedding import get_embedder
 
-    provider = get_provider("openai", api_key="sk-...", model="gpt-5.4-nano")
+    provider = get_provider("xai")
     response = await provider.generate(system_prompt="...", user_prompt="...")
 
     embedder = get_embedder("openai", api_key="sk-...")

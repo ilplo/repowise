@@ -29,7 +29,6 @@ src/repowise/cli/commands/mcp_cmd.py
 src/repowise/cli/commands/reindex_cmd.py
 src/repowise/cli/commands/restart_cmd.py
 src/repowise/cli/commands/search_cmd.py
-src/repowise/cli/commands/serve_cmd.py
 src/repowise/cli/commands/status_cmd.py
 src/repowise/cli/commands/update_cmd.py
 src/repowise/cli/commands/watch_cmd.py
@@ -90,7 +89,6 @@ src/repowise/core/providers/llm/base.py
 src/repowise/core/providers/llm/gemini.py
 src/repowise/core/providers/llm/litellm.py
 src/repowise/core/providers/llm/mock.py
-src/repowise/core/providers/llm/ollama.py
 src/repowise/core/providers/llm/openai.py
 src/repowise/core/providers/llm/registry.py
 src/repowise/core/providers/llm/xai.py

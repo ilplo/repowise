@@ -49,7 +49,7 @@ def _setup_embedder() -> None:
     if os.environ.get("REPOWISE_EMBEDDER"):
         return
 
-    # Check global config saved by a previous serve/init run.
+    # Check global config saved by a previous start/init run.
     cfg = load_app_config()
     saved_embedder = cfg.get("embedder", "")
     if saved_embedder and saved_embedder != "mock":
@@ -441,6 +441,25 @@ def _build_local_web(web_dir: Path, npm: str) -> bool:
         return False
 
 
+def _replace_tree(src: Path, dst: Path) -> None:
+    """Replace a copied frontend asset tree with the current build output."""
+    if not src.exists():
+        return
+    if dst.exists():
+        shutil.rmtree(dst)
+    shutil.copytree(str(src), str(dst))
+
+
+def _sync_frontend_assets(local_web: Path, standalone_dir: Path) -> None:
+    static_src = local_web / ".next" / "static"
+    static_dst = standalone_dir / ".next" / "static"
+    _replace_tree(static_src, static_dst)
+
+    public_src = local_web / "public"
+    public_dst = standalone_dir / "public"
+    _replace_tree(public_src, public_dst)
+
+
 def _start_mcp(repo_path: Path, mcp_port: int) -> subprocess.Popen | None:
     try:
         return subprocess.Popen(
@@ -469,15 +488,9 @@ def _start_frontend(node: str, backend_port: int, frontend_port: int) -> subproc
         standalone_dir = local_web / ".next" / "standalone"
         server_js = standalone_dir / "server.js"
         if server_js.exists():
-            # Copy static files into standalone (Next.js requirement)
-            static_src = local_web / ".next" / "static"
-            static_dst = standalone_dir / ".next" / "static"
-            if static_src.exists() and not static_dst.exists():
-                shutil.copytree(str(static_src), str(static_dst))
-            public_src = local_web / "public"
-            public_dst = standalone_dir / "public"
-            if public_src.exists() and not public_dst.exists():
-                shutil.copytree(str(public_src), str(public_dst))
+            # Copy static files into standalone (Next.js requirement).
+            # Replace existing copies so restarts serve the latest client chunks.
+            _sync_frontend_assets(local_web, standalone_dir)
 
             return subprocess.Popen(
                 [node, str(server_js)],

@@ -13,20 +13,18 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { addProviderKey, removeProviderKey, getProviders } from "@/lib/api/providers";
+import { addProviderKey, removeProviderKey, getProviders, setActiveProvider } from "@/lib/api/providers";
+import type { ProviderInfo } from "@/lib/api/types";
 
-const XAI_MODELS = [
-  "grok-4-1-fast-reasoning",
-  "grok-4-fast-reasoning",
-  "grok-3-mini-fast",
-] as const;
-
+const DEFAULT_PROVIDER = "xai";
 const DEFAULT_MODEL = "grok-4-1-fast-reasoning";
 
 type TestStatus = "idle" | "testing" | "ok" | "error";
 type KeyStatus = "idle" | "saving" | "saved" | "error";
 
 export function ProviderSection() {
+  const [providers, setProviders] = useState<ProviderInfo[]>([]);
+  const [providerId, setProviderId] = useState(DEFAULT_PROVIDER);
   const [model, setModel] = useState(DEFAULT_MODEL);
   const [apiKey, setApiKey] = useState("");
   const [keyConfigured, setKeyConfigured] = useState(false);
@@ -36,13 +34,26 @@ export function ProviderSection() {
   const [testError, setTestError] = useState("");
 
   useEffect(() => {
-    const saved = config.getModel();
-    setModel(saved && (XAI_MODELS as readonly string[]).includes(saved) ? saved : DEFAULT_MODEL);
-    config.setProvider("xai");
     getProviders()
       .then((data) => {
-        const xai = data.providers.find((p) => p.id === "xai");
-        if (xai) setKeyConfigured(xai.configured);
+        setProviders(data.providers);
+        const activeId = data.active.provider ?? config.getProvider() ?? DEFAULT_PROVIDER;
+        const activeProvider =
+          data.providers.find((p) => p.id === activeId) ??
+          data.providers.find((p) => p.id === DEFAULT_PROVIDER) ??
+          data.providers[0];
+        const nextProviderId = activeProvider?.id ?? DEFAULT_PROVIDER;
+        const savedModel = config.getModel();
+        const nextModel =
+          data.active.model ??
+          (savedModel && activeProvider?.models.includes(savedModel) ? savedModel : undefined) ??
+          activeProvider?.default_model ??
+          DEFAULT_MODEL;
+        setProviderId(nextProviderId);
+        setModel(nextModel);
+        setKeyConfigured(Boolean(activeProvider?.configured));
+        config.setProvider(nextProviderId);
+        config.setModel(nextModel);
       })
       .catch(() => {});
   }, []);
@@ -50,6 +61,18 @@ export function ProviderSection() {
   function handleModelChange(v: string) {
     setModel(v);
     config.setModel(v);
+    setActiveProvider(providerId, v).catch(() => {});
+  }
+
+  function handleProviderChange(v: string) {
+    const selected = providers.find((p) => p.id === v);
+    const nextModel = selected?.default_model ?? DEFAULT_MODEL;
+    setProviderId(v);
+    setModel(nextModel);
+    setKeyConfigured(Boolean(selected?.configured));
+    config.setProvider(v);
+    config.setModel(nextModel);
+    setActiveProvider(v, nextModel).catch(() => {});
   }
 
   async function handleSaveKey() {
@@ -57,7 +80,7 @@ export function ProviderSection() {
     setKeyStatus("saving");
     setKeyError("");
     try {
-      await addProviderKey("xai", apiKey.trim());
+      await addProviderKey(providerId, apiKey.trim());
       setKeyConfigured(true);
       setApiKey("");
       setKeyStatus("saved");
@@ -71,7 +94,7 @@ export function ProviderSection() {
     setKeyStatus("saving");
     setKeyError("");
     try {
-      await removeProviderKey("xai");
+      await removeProviderKey(providerId);
       setKeyConfigured(false);
       setKeyStatus("idle");
     } catch {
@@ -98,16 +121,37 @@ export function ProviderSection() {
     }
   }
 
+  const selectedProvider = providers.find((p) => p.id === providerId);
+  const selectedModels = selectedProvider?.models ?? [];
+  const requiresKey = true;
+
   return (
     <div className="space-y-4">
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">xAI / Grok</CardTitle>
+          <CardTitle className="text-base">Model Provider</CardTitle>
           <CardDescription>
-            API key and model used when triggering init or sync from the UI.
+            xAI / Grok is the only supported LLM provider.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
+          <div className="space-y-1.5">
+            <Label>Provider</Label>
+            <Select value={providerId} onValueChange={handleProviderChange}>
+              <SelectTrigger className="w-72">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {(providers.length ? providers : [{ id: DEFAULT_PROVIDER, name: "xAI / Grok" } as ProviderInfo]).map((p) => (
+                  <SelectItem key={p.id} value={p.id}>
+                    {p.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          {requiresKey && (
           <div className="space-y-1.5">
             <div className="flex items-center gap-2">
               <Label>API Key</Label>
@@ -120,7 +164,7 @@ export function ProviderSection() {
             <div className="flex gap-2">
               <Input
                 type="password"
-                placeholder={keyConfigured ? "••••••••••••••••" : "xai-…"}
+                placeholder={keyConfigured ? "••••••••••••••••" : "xai-..."}
                 value={apiKey}
                 onChange={(e) => { setApiKey(e.target.value); setKeyStatus("idle"); }}
                 onKeyDown={(e) => { if (e.key === "Enter") handleSaveKey(); }}
@@ -150,7 +194,9 @@ export function ProviderSection() {
               <p className="text-xs text-[var(--color-outdated)]">{keyError}</p>
             )}
           </div>
+          )}
 
+          {selectedModels.length > 0 && (
           <div className="space-y-1.5">
             <Label>Model</Label>
             <Select value={model} onValueChange={handleModelChange}>
@@ -158,7 +204,7 @@ export function ProviderSection() {
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>
-                {XAI_MODELS.map((m) => (
+                {selectedModels.map((m) => (
                   <SelectItem key={m} value={m} className="font-mono">
                     {m}
                   </SelectItem>
@@ -166,6 +212,7 @@ export function ProviderSection() {
               </SelectContent>
             </Select>
           </div>
+          )}
         </CardContent>
       </Card>
 

@@ -33,7 +33,7 @@ export const config = {
   getApiUrl: () => read(KEYS.apiUrl),
   setApiUrl: (v: string) => write(KEYS.apiUrl, v),
 
-  getProvider: () => read(KEYS.provider) || "litellm",
+  getProvider: () => read(KEYS.provider) || "xai",
   setProvider: (v: string) => write(KEYS.provider, v),
 
   getModel: () => read(KEYS.model),

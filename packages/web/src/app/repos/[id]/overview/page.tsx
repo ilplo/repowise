@@ -45,6 +45,7 @@ import type {
 } from "@/lib/api/types";
 
 export const metadata: Metadata = { title: "Overview" };
+export const dynamic = "force-dynamic";
 
 interface Props {
   params: Promise<{ id: string }>;
@@ -86,7 +87,10 @@ export default async function OverviewPage({ params }: Props) {
     ]);
 
   // Find timestamps for last sync and last full re-index from completed jobs
-  const lastSyncJob = completedJobs?.find((j) => !j.config?.mode || j.config.mode === "sync");
+  const lastSyncJob = completedJobs?.find((j) => {
+    const mode = (j.config?.mode as string | undefined) ?? "sync";
+    return mode === "sync" || mode === "cli_update";
+  });
   const lastResyncJob = completedJobs?.find((j) => j.config?.mode === "full_resync");
 
   // Compute health score

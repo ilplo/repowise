@@ -97,7 +97,7 @@ class BaseProvider(ABC):
         """Short, stable identifier for this provider.
 
         Used in logs, database records, and config files.
-        Examples: 'anthropic', 'openai', 'ollama', 'litellm', 'mock'.
+        Examples: 'xai', 'mock'.
         """
         ...
 
@@ -106,7 +106,7 @@ class BaseProvider(ABC):
     def model_name(self) -> str:
         """The specific model identifier being used.
 
-        Examples: 'claude-sonnet-4-6', 'gpt-4o', 'llama3.2'.
+        Examples: provider-specific model identifiers.
         Stored on every generated page for attribution and reproducibility.
         """
         ...

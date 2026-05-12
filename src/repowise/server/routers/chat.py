@@ -91,7 +91,7 @@ async def chat_messages(repo_id: str, body: ChatRequest, request: Request):
         raise HTTPException(
             422,
             f"Provider '{provider.provider_name}' does not support streaming chat. "
-            "Configure a provider that supports tool use (Anthropic, OpenAI, Gemini).",
+            "Configure xAI/Grok.",
         )
 
     async def event_stream():

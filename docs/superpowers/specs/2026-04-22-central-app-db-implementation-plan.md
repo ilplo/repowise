@@ -64,7 +64,7 @@ Risks:
 - mixed behavior between CLI and server imports
 
 Definition of done:
-- `init`, `serve`, `mcp`, `status`, `update`, and `watch` all execute under `.venv` when started from the checkout
+- `init`, `start`, `mcp`, `status`, `update`, and `watch` all execute under `.venv` when started from the checkout
 - default DB path no longer changes based on target repo path in steady-state mode
 
 ### 2. Data and Schema
@@ -98,7 +98,7 @@ Scope:
 
 Deliverables:
 - updated DB resolution helpers
-- updated CLI init/update/status/serve flows
+- updated CLI init/update/status/start flows
 - updated background execution and repo CRUD behavior
 
 Dependencies:
@@ -246,7 +246,7 @@ Evidence of completion:
 ### Phase 4: Command and Job Migration
 
 Objective:
-- remove target-local `.repowise` state writes from init/update/status/serve and background sync paths
+- remove target-local `.repowise` state writes from init/update/status/start and background sync paths
 
 Entry criteria:
 - repository ownership slice proven
@@ -426,7 +426,7 @@ Proof:
 Critical path:
 - yes; `init` is a primary writer and currently owns much of the repo-local state behavior
 
-### Task 8. Refactor `status`, `update`, and `serve` to central-only reads/writes
+### Task 8. Refactor `status`, `update`, and `start` to central-only reads/writes
 
 Owner:
 - backend / CLI
@@ -597,7 +597,7 @@ Evidence:
 Applies before importer work begins.
 
 Checks:
-- `init`, `status`, `serve`, and sync jobs operate central-only in steady-state
+- `init`, `status`, `start`, and sync jobs operate central-only in steady-state
 - missing target path errors are surfaced cleanly
 - no new writes to target-local `.repowise` in tested flows
 
@@ -722,7 +722,7 @@ Mitigation:
 
 ### Milestone 3: Central-Only Command and Worker Flow Done
 
-- `init`, `status`, `serve`, `update`, and sync jobs do not require or write target-local state
+- `init`, `status`, `start`, `update`, and sync jobs do not require or write target-local state
 - historical pages/graph/jobs persist across restart
 - end-to-end sync smoke passes
 

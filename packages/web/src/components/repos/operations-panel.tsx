@@ -2,8 +2,8 @@
 
 import { useState } from "react";
 import { toast } from "sonner";
-import { RefreshCw, Zap, ChevronDown, ChevronUp, AlertTriangle, Download } from "lucide-react";
-import { syncRepo, fullResyncRepo } from "@/lib/api/repos";
+import { RefreshCw, Zap, ChevronDown, ChevronUp, AlertTriangle, Download, Terminal } from "lucide-react";
+import { syncRepo, runUpdateRepo, fullResyncRepo } from "@/lib/api/repos";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
@@ -22,8 +22,8 @@ interface Props {
 }
 
 const DEFAULT_CONFIG: RunConfig = {
-  provider: "litellm",
-  model: "",
+  provider: "xai",
+  model: "grok-4-1-fast-reasoning",
   skipTests: false,
   skipInfra: false,
   concurrency: 4,
@@ -34,7 +34,7 @@ export function OperationsPanel({ repoId, repoName }: Props) {
   const [runConfig, setRunConfig] = useState<RunConfig>(DEFAULT_CONFIG);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
   const [confirmResync, setConfirmResync] = useState(false);
-  const [loading, setLoading] = useState<"sync" | "resync" | null>(null);
+  const [loading, setLoading] = useState<"sync" | "update" | "resync" | null>(null);
 
   async function handleSync() {
     setLoading("sync");
@@ -60,6 +60,21 @@ export function OperationsPanel({ repoId, repoName }: Props) {
       toast.info(`Full resync started — ${repoName}`);
     } catch (e) {
       toast.error("Resync failed", {
+        description: e instanceof Error ? e.message : "Unknown error",
+      });
+    } finally {
+      setLoading(null);
+    }
+  }
+
+  async function handleUpdate() {
+    setLoading("update");
+    try {
+      const job = await runUpdateRepo(repoId);
+      setActiveJobId(job.id);
+      toast.info(`Update started — ${repoName}`);
+    } catch (e) {
+      toast.error("Update failed", {
         description: e instanceof Error ? e.message : "Unknown error",
       });
     } finally {
@@ -104,7 +119,7 @@ export function OperationsPanel({ repoId, repoName }: Props) {
 
           {/* Action buttons */}
           {!activeJobId && (
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <Button
                 variant="default"
                 size="sm"
@@ -114,6 +129,16 @@ export function OperationsPanel({ repoId, repoName }: Props) {
               >
                 <Zap className="h-3.5 w-3.5 mr-1.5" />
                 {loading === "sync" ? "Starting…" : "Sync"}
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleUpdate}
+                disabled={loading !== null}
+                className="flex-1"
+              >
+                <Terminal className="h-3.5 w-3.5 mr-1.5" />
+                {loading === "update" ? "Starting…" : "Update"}
               </Button>
               <Button
                 variant="outline"

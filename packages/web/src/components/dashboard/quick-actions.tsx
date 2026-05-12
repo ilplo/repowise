@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { RefreshCw, FileText, Trash2, AlertTriangle, Zap } from "lucide-react";
+import { RefreshCw, Trash2, AlertTriangle, Zap, Terminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -12,10 +13,13 @@ import {
   DialogDescription,
   DialogFooter,
 } from "@/components/ui/dialog";
-import { syncRepo, fullResyncRepo } from "@/lib/api/repos";
+import { syncRepo, runUpdateRepo, fullResyncRepo } from "@/lib/api/repos";
 import { analyzeDeadCode } from "@/lib/api/dead-code";
+import { listJobs } from "@/lib/api/jobs";
 import { GenerationProgress } from "@/components/jobs/generation-progress";
+import { ServerLogWindow } from "@/components/logs/server-log-window";
 import { formatNumber, formatCost, formatRelativeTime } from "@/lib/utils/format";
+import type { JobResponse } from "@/lib/api/types";
 
 // Weighted average per-page token heuristics from cost_estimator.py _TOKEN_HEURISTICS
 const AVG_INPUT_TOKENS_PER_PAGE = 3500;
@@ -23,29 +27,14 @@ const AVG_OUTPUT_TOKENS_PER_PAGE = 2200;
 
 // Pricing per 1K tokens (input, output) — mirrors cost_estimator.py _COST_TABLE exactly
 const COST_TABLE_EXACT: Record<string, [number, number]> = {
-  "gpt-5.4": [0.0025, 0.015],
-  "gpt-5.4-mini": [0.00075, 0.0045],
-  "gpt-5.4-nano": [0.0002, 0.00125],
-  "gemini-3.1-pro-preview": [0.002, 0.012],
-  "gemini-3-flash-preview": [0.0005, 0.003],
-  "gemini-3.1-flash-lite-preview": [0.00025, 0.0015],
-  "claude-opus-4-6": [0.005, 0.025],
-  "claude-sonnet-4-6": [0.003, 0.015],
-  "claude-haiku-4-5": [0.001, 0.005],
+  "grok-4-1-fast-reasoning": [0.0002, 0.0005],
+  "grok-4-fast-reasoning": [0.0002, 0.0005],
+  "grok-3-mini-fast": [0.0002, 0.0005],
 };
 
 // Prefix fallbacks — longest match wins (same as cost_estimator.py)
 const COST_TABLE_PREFIX: [string, [number, number]][] = [
-  ["gpt-5.4-nano", [0.0002, 0.00125]],
-  ["gpt-5.4-mini", [0.00075, 0.0045]],
-  ["gpt-5.4", [0.0025, 0.015]],
-  ["claude-opus", [0.005, 0.025]],
-  ["claude-sonnet", [0.003, 0.015]],
-  ["claude-haiku", [0.001, 0.005]],
-  ["claude", [0.003, 0.015]],
-  ["gemini", [0.00025, 0.0015]],
-  ["llama", [0, 0]],
-  ["mock", [0, 0]],
+  ["grok", [0.0002, 0.0005]],
 ];
 
 function lookupCost(modelName: string): [number, number] {
@@ -62,6 +51,22 @@ function lookupCost(modelName: string): [number, number] {
   return bestRates;
 }
 
+function latestTimestamp(a?: string | null, b?: string | null): string | null {
+  if (!a) return b ?? null;
+  if (!b) return a;
+  return Date.parse(b) > Date.parse(a) ? b : a;
+}
+
+function latestCompletedJobTimestamp(jobs: JobResponse[], modes: string[]): string | null {
+  let latest: string | null = null;
+  for (const job of jobs) {
+    const mode = (job.config?.mode as string | undefined) ?? "sync";
+    if (!modes.includes(mode)) continue;
+    latest = latestTimestamp(latest, job.finished_at);
+  }
+  return latest;
+}
+
 function estimateCost(pageCount: number, modelName: string): { inputTokens: number; outputTokens: number; cost: number } {
   const inputTokens = pageCount * AVG_INPUT_TOKENS_PER_PAGE;
   const outputTokens = pageCount * AVG_OUTPUT_TOKENS_PER_PAGE;
@@ -71,7 +76,7 @@ function estimateCost(pageCount: number, modelName: string): { inputTokens: numb
   return { inputTokens, outputTokens, cost };
 }
 
-type ActionKey = "sync" | "resync" | "dead-code";
+type ActionKey = "sync" | "update" | "resync" | "dead-code";
 
 interface ActionDef {
   key: ActionKey;
@@ -94,6 +99,16 @@ const ACTIONS: ActionDef[] = [
     needsConfirm: true,
     confirmTitle: "Sync Repository",
     confirmDescription: "Re-indexes the dependency graph, git metadata, dead code, and decisions. Only wiki pages affected by recent changes are regenerated (minimal LLM cost).",
+  },
+  {
+    key: "update",
+    label: "Update",
+    description: "Run repowise update for this repo",
+    icon: Terminal,
+    destructive: false,
+    needsConfirm: true,
+    confirmTitle: "Run Update",
+    confirmDescription: "Runs repowise update with this repository path and records the command as a background job.",
   },
   {
     key: "resync",
@@ -127,18 +142,55 @@ interface QuickActionsProps {
 }
 
 export function QuickActions({ repoId, repoName, pageCount = 0, modelName = "", lastSyncAt, lastResyncAt }: QuickActionsProps) {
+  const router = useRouter();
   const [loading, setLoading] = useState<ActionKey | null>(null);
   const [pendingAction, setPendingAction] = useState<ActionDef | null>(null);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
-  const [activeJobKey, setActiveJobKey] = useState<"sync" | "resync" | null>(null);
+  const [activeJobKey, setActiveJobKey] = useState<"sync" | "update" | "resync" | null>(null);
   const [syncAt, setSyncAt] = useState(lastSyncAt);
   const [resyncAt, setResyncAt] = useState(lastResyncAt);
+  const pendingIsIncremental = pendingAction?.key === "sync" || pendingAction?.key === "update";
+
+  useEffect(() => {
+    if (!activeJobId) setSyncAt((current) => latestTimestamp(current, lastSyncAt));
+  }, [activeJobId, lastSyncAt]);
+
+  useEffect(() => {
+    if (!activeJobId) setResyncAt((current) => latestTimestamp(current, lastResyncAt));
+  }, [activeJobId, lastResyncAt]);
+
+  useEffect(() => {
+    if (activeJobId) return;
+
+    let cancelled = false;
+
+    async function refreshCompletedJobTimestamps() {
+      try {
+        const jobs = await listJobs({ repo_id: repoId, limit: 20, status: "completed" });
+        if (cancelled) return;
+        const latestSyncAt = latestCompletedJobTimestamp(jobs, ["sync", "cli_update"]);
+        const latestResyncAt = latestCompletedJobTimestamp(jobs, ["full_resync"]);
+        setSyncAt((current) => latestTimestamp(current, latestSyncAt));
+        setResyncAt((current) => latestTimestamp(current, latestResyncAt));
+      } catch {
+        // The server-rendered timestamps still provide a graceful fallback.
+      }
+    }
+
+    void refreshCompletedJobTimestamps();
+    const interval = window.setInterval(refreshCompletedJobTimestamps, 30_000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [activeJobId, repoId]);
 
   // Sync regenerates ~10-15% of pages (only affected by changes).
   // Full resync regenerates all pages.
   const estimate = pageCount > 0 && pendingAction?.key !== "dead-code"
     ? estimateCost(
-        pendingAction?.key === "sync" ? Math.max(1, Math.ceil(pageCount * 0.1)) : pageCount,
+        pendingIsIncremental ? Math.max(1, Math.ceil(pageCount * 0.1)) : pageCount,
         modelName
       )
     : null;
@@ -152,6 +204,11 @@ export function QuickActions({ repoId, repoName, pageCount = 0, modelName = "", 
         setActiveJobId(job.id);
         setActiveJobKey("sync");
         toast.info(`Sync started${repoName ? ` — ${repoName}` : ""}`);
+      } else if (action.key === "update") {
+        const job = await runUpdateRepo(repoId);
+        setActiveJobId(job.id);
+        setActiveJobKey("update");
+        toast.info(`Update started${repoName ? ` — ${repoName}` : ""}`);
       } else if (action.key === "resync") {
         const job = await fullResyncRepo(repoId);
         setActiveJobId(job.id);
@@ -186,12 +243,15 @@ export function QuickActions({ repoId, repoName, pageCount = 0, modelName = "", 
           <GenerationProgress
             jobId={activeJobId}
             repoName={repoName}
-            onDone={(finishedAt) => {
-              const ts = finishedAt ?? new Date().toISOString();
-              if (activeJobKey === "sync") setSyncAt(ts);
-              if (activeJobKey === "resync") setResyncAt(ts);
+            onDone={(finishedAt, status) => {
+              if (status === "completed") {
+                const ts = finishedAt ?? new Date().toISOString();
+                if (activeJobKey === "sync" || activeJobKey === "update") setSyncAt(ts);
+                if (activeJobKey === "resync") setResyncAt(ts);
+              }
               setActiveJobId(null);
               setActiveJobKey(null);
+              router.refresh();
             }}
           />
         </div>
@@ -218,6 +278,7 @@ export function QuickActions({ repoId, repoName, pageCount = 0, modelName = "", 
                 </Button>
               );
             })}
+            <ServerLogWindow />
           </div>
           <div className="flex flex-wrap gap-x-4 gap-y-0.5">
             <span className="text-[11px] text-[var(--color-text-tertiary)]">
@@ -261,7 +322,7 @@ export function QuickActions({ repoId, repoName, pageCount = 0, modelName = "", 
                 <div className="grid grid-cols-3 gap-2 text-center">
                   <div>
                     <p className="text-sm font-semibold text-[var(--color-text-primary)] tabular-nums">
-                      {formatNumber(pendingAction.key === "sync" ? Math.max(1, Math.ceil(pageCount * 0.1)) : pageCount)}
+                      {formatNumber(pendingIsIncremental ? Math.max(1, Math.ceil(pageCount * 0.1)) : pageCount)}
                     </p>
                     <p className="text-[10px] text-[var(--color-text-tertiary)]">pages</p>
                   </div>

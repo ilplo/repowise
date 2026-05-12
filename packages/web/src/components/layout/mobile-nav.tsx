@@ -33,6 +33,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle } from "@/components/ui/sh
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { AddRepoDialog } from "@/components/repos/add-repo-dialog";
+import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { cn } from "@/lib/utils/cn";
 import type { RepoResponse, WorkspaceResponse } from "@/lib/api/types";
 
@@ -112,6 +113,9 @@ export function MobileNav({ repos = [], workspace }: MobileNavProps) {
         <span className="text-base font-semibold text-[var(--color-text-primary)] tracking-tight truncate">
           repowise
         </span>
+      </div>
+      <div className="ml-auto">
+        <ThemeToggle />
       </div>
 
       <Sheet open={open} onOpenChange={setOpen}>

@@ -284,9 +284,9 @@ def update_command(
 
     run_async(_persist())
 
-    # ---- CLAUDE.md (best-effort) ----
+    # ---- CLAUDE.md (best-effort, explicit opt-in) ----
     cfg = load_config(repo_path)
-    if cfg.get("editor_files", {}).get("claude_md", True):
+    if cfg.get("editor_files", {}).get("claude_md", False):
         try:
             from repowise.cli.helpers import get_db_url_for_repo
             from repowise.core.generation.editor_files import (

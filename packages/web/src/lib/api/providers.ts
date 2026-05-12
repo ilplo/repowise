@@ -6,7 +6,7 @@ import { apiGet, apiPatch, apiPost, apiDelete } from "./client";
 import type { ProvidersResponse } from "./types";
 
 export async function getProviders(): Promise<ProvidersResponse> {
-  return apiGet<ProvidersResponse>("/api/providers");
+  return apiGet<ProvidersResponse>("/api/providers", undefined, { cache: "no-store" });
 }
 
 export async function setActiveProvider(
