@@ -13,11 +13,33 @@ import type { WorkspaceResponse } from "@/lib/api/types";
 import "@/styles/globals.css";
 
 export const metadata: Metadata = {
+  applicationName: "repowise",
   title: {
-    default: "repowise",
+    default: "repowise — Codebase documentation engine",
     template: "%s — repowise",
   },
-  description: "Open-source codebase documentation engine",
+  description:
+    "Repowise turns indexed repositories into living documentation, code intelligence, dependency maps, and operational engineering dashboards.",
+  keywords: [
+    "codebase documentation",
+    "developer tools",
+    "repository intelligence",
+    "architecture documentation",
+    "code search",
+  ],
+  openGraph: {
+    title: "repowise — Codebase documentation engine",
+    description:
+      "Living documentation, dependency maps, repository health, and engineering intelligence for indexed codebases.",
+    siteName: "repowise",
+    type: "website",
+  },
+  twitter: {
+    card: "summary",
+    title: "repowise — Codebase documentation engine",
+    description:
+      "Living documentation, dependency maps, repository health, and engineering intelligence for indexed codebases.",
+  },
 };
 
 export default async function RootLayout({

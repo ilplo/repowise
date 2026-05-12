@@ -101,12 +101,12 @@ export function Sidebar({ repos = [], activeRepoId, workspace }: SidebarProps) {
   return (
     <aside
       className={cn(
-        "hidden md:flex h-full flex-col border-r border-[var(--color-border-default)] bg-[var(--color-bg-surface)] transition-all duration-200 shrink-0",
+        "glass-shell hidden md:flex h-full flex-col border-r border-[var(--color-border-default)] bg-[var(--color-bg-surface)] transition-all duration-200 shrink-0",
         isIconOnly ? "w-[56px]" : "w-[260px]",
       )}
     >
       {/* Logo */}
-      <div className="flex h-14 items-center gap-3 px-4">
+      <div className="flex h-16 items-center gap-3 border-b border-[var(--glass-border)] px-4">
         <Image
           src="/repowise-logo.png"
           alt="repowise"
@@ -122,7 +122,7 @@ export function Sidebar({ repos = [], activeRepoId, workspace }: SidebarProps) {
         {!isIconOnly && <ThemeToggle />}
         <button
           onClick={() => setCollapsed((c) => !c)}
-          className="ml-auto shrink-0 rounded-md p-1.5 text-[var(--color-text-tertiary)] hover:bg-[var(--color-bg-elevated)] hover:text-[var(--color-text-secondary)] transition-colors"
+          className="ml-auto shrink-0 rounded-md p-1.5 text-[var(--color-text-tertiary)] transition-colors hover:bg-[var(--color-bg-elevated)] hover:text-[var(--color-text-secondary)] focus-visible:ring-2 focus-visible:ring-[var(--color-accent-primary)]"
           aria-label={isIconOnly ? "Expand sidebar" : "Collapse sidebar"}
         >
           <PanelLeft className={cn("h-4 w-4 transition-transform", isIconOnly && "rotate-180")} />
@@ -211,13 +211,13 @@ export function Sidebar({ repos = [], activeRepoId, workspace }: SidebarProps) {
 
                   return (
                     <div key={repo.id}>
-                      <button
-                        onClick={() => toggleRepo(repo.id)}
-                        className={cn(
-                          "flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-sm transition-colors hover:bg-[var(--color-bg-elevated)]",
-                          isActive
-                            ? "text-[var(--color-text-primary)]"
-                            : "text-[var(--color-text-secondary)]",
+                          <button
+                            onClick={() => toggleRepo(repo.id)}
+                            className={cn(
+                              "flex w-full items-center gap-2.5 rounded-lg border border-transparent px-2 py-2 text-sm transition-colors hover:bg-[var(--color-bg-elevated)] focus-visible:ring-2 focus-visible:ring-[var(--color-accent-primary)]",
+                              isActive
+                                ? "text-[var(--color-text-primary)]"
+                                : "text-[var(--color-text-secondary)]",
                         )}
                       >
                         <Circle
@@ -270,13 +270,14 @@ export function Sidebar({ repos = [], activeRepoId, workspace }: SidebarProps) {
       </ScrollArea>
 
       {/* Footer */}
-      <div className={cn("border-t border-[var(--color-border-default)] py-3", isIconOnly ? "flex justify-center px-0" : "px-4")}>
+      <div className={cn("border-t border-[var(--glass-border)] py-3", isIconOnly ? "flex justify-center px-0" : "px-4")}>
         {isIconOnly ? (
           <ThemeToggle iconOnly />
         ) : (
-          <p className="text-xs text-[var(--color-text-tertiary)]">
-            repowise v0.1.0
-          </p>
+          <div>
+            <p className="text-xs font-medium text-[var(--color-text-secondary)]">repowise</p>
+            <p className="text-[11px] text-[var(--color-text-tertiary)]">Living codebase context</p>
+          </div>
         )}
       </div>
     </aside>
@@ -304,9 +305,9 @@ function SidebarNavItem({
             href={item.href}
             aria-label={item.label}
             className={cn(
-              "flex items-center justify-center rounded-lg p-2.5 transition-colors",
+              "flex items-center justify-center rounded-lg p-2.5 transition-colors focus-visible:ring-2 focus-visible:ring-[var(--color-accent-primary)]",
               isActive
-                ? "bg-[var(--color-accent-muted)] text-[var(--color-accent-primary)]"
+                ? "border border-[var(--color-accent-muted)] bg-[var(--color-accent-muted)] text-[var(--color-accent-primary)] shadow-[0_0_0_1px_rgba(245,149,32,0.08)]"
                 : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-elevated)] hover:text-[var(--color-text-primary)]",
             )}
           >
@@ -322,10 +323,10 @@ function SidebarNavItem({
     <Link
       href={item.href}
       className={cn(
-        "flex items-center gap-2.5 rounded-lg px-2 transition-colors",
+        "flex items-center gap-2.5 rounded-lg border border-transparent px-2 transition-colors focus-visible:ring-2 focus-visible:ring-[var(--color-accent-primary)]",
         size === "sm" ? "py-1.5 text-[13px]" : "py-2 text-sm",
         isActive
-          ? "bg-[var(--color-accent-muted)] text-[var(--color-accent-primary)]"
+          ? "border-[var(--color-accent-muted)] bg-[var(--color-accent-muted)] text-[var(--color-accent-primary)] shadow-[0_0_0_1px_rgba(245,149,32,0.08)]"
           : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-elevated)] hover:text-[var(--color-text-primary)]",
       )}
     >

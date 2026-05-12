@@ -92,7 +92,7 @@ export function MobileNav({ repos = [], workspace }: MobileNavProps) {
   }, [pathname]);
 
   return (
-    <div className="flex md:hidden h-14 items-center gap-3 px-4 border-b border-[var(--color-border-default)] bg-[var(--color-bg-surface)] shrink-0">
+    <div className="glass-shell flex md:hidden h-16 items-center gap-3 px-4 border-b border-[var(--color-border-default)] bg-[var(--color-bg-surface)] shrink-0">
       <Button
         variant="ghost"
         size="icon"
@@ -119,8 +119,8 @@ export function MobileNav({ repos = [], workspace }: MobileNavProps) {
       </div>
 
       <Sheet open={open} onOpenChange={setOpen}>
-        <SheetContent side="left" className="p-0">
-          <SheetHeader className="border-b border-[var(--color-border-default)] h-14 flex-row items-center gap-3 py-0 px-4">
+        <SheetContent side="left" className="w-[min(320px,calc(100vw-2rem))] p-0">
+          <SheetHeader className="border-b border-[var(--glass-border)] h-16 flex-row items-center gap-3 py-0 px-4">
             <Image
               src="/repowise-logo.png"
               alt="repowise"
@@ -142,9 +142,9 @@ export function MobileNav({ repos = [], workspace }: MobileNavProps) {
                       key={item.href}
                       href={item.href}
                       className={cn(
-                        "flex items-center gap-2.5 rounded-lg px-2 py-2 text-sm transition-colors",
+                        "flex items-center gap-2.5 rounded-lg border border-transparent px-2 py-2.5 text-sm transition-colors focus-visible:ring-2 focus-visible:ring-[var(--color-accent-primary)]",
                         isActive
-                          ? "bg-[var(--color-accent-muted)] text-[var(--color-accent-primary)]"
+                          ? "border-[var(--color-accent-muted)] bg-[var(--color-accent-muted)] text-[var(--color-accent-primary)]"
                           : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-elevated)] hover:text-[var(--color-text-primary)]",
                       )}
                     >
@@ -173,9 +173,9 @@ export function MobileNav({ repos = [], workspace }: MobileNavProps) {
                           key={item.href}
                           href={item.href}
                           className={cn(
-                            "flex items-center gap-2.5 rounded-lg px-2 py-2 text-sm transition-colors",
+                            "flex items-center gap-2.5 rounded-lg border border-transparent px-2 py-2.5 text-sm transition-colors focus-visible:ring-2 focus-visible:ring-[var(--color-accent-primary)]",
                             isActive
-                              ? "bg-[var(--color-accent-muted)] text-[var(--color-accent-primary)]"
+                              ? "border-[var(--color-accent-muted)] bg-[var(--color-accent-muted)] text-[var(--color-accent-primary)]"
                               : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-elevated)] hover:text-[var(--color-text-primary)]",
                           )}
                         >
@@ -202,7 +202,7 @@ export function MobileNav({ repos = [], workspace }: MobileNavProps) {
                         <div key={repo.id}>
                           <button
                             onClick={() => toggleRepo(repo.id)}
-                            className="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-sm transition-colors hover:bg-[var(--color-bg-elevated)] text-[var(--color-text-secondary)]"
+                            className="flex w-full items-center gap-2.5 rounded-lg border border-transparent px-2 py-2.5 text-sm text-[var(--color-text-secondary)] transition-colors hover:bg-[var(--color-bg-elevated)] focus-visible:ring-2 focus-visible:ring-[var(--color-accent-primary)]"
                           >
                             <Circle className="h-2 w-2 shrink-0 fill-[var(--color-text-tertiary)] text-[var(--color-text-tertiary)]" />
                             <span className="flex-1 truncate text-left font-medium">
@@ -226,9 +226,9 @@ export function MobileNav({ repos = [], workspace }: MobileNavProps) {
                                     key={item.href}
                                     href={item.href}
                                     className={cn(
-                                      "flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-[13px] transition-colors",
+                                      "flex items-center gap-2.5 rounded-lg border border-transparent px-2 py-2 text-[13px] transition-colors focus-visible:ring-2 focus-visible:ring-[var(--color-accent-primary)]",
                                       isActive
-                                        ? "bg-[var(--color-accent-muted)] text-[var(--color-accent-primary)]"
+                                        ? "border-[var(--color-accent-muted)] bg-[var(--color-accent-muted)] text-[var(--color-accent-primary)]"
                                         : "text-[var(--color-text-secondary)] hover:bg-[var(--color-bg-elevated)] hover:text-[var(--color-text-primary)]",
                                     )}
                                   >
@@ -260,8 +260,9 @@ export function MobileNav({ repos = [], workspace }: MobileNavProps) {
             </div>
           </ScrollArea>
 
-          <div className="border-t border-[var(--color-border-default)] px-4 py-3">
-            <p className="text-xs text-[var(--color-text-tertiary)]">repowise v0.1.0</p>
+          <div className="border-t border-[var(--glass-border)] px-4 py-3">
+            <p className="text-xs font-medium text-[var(--color-text-secondary)]">repowise</p>
+            <p className="text-[11px] text-[var(--color-text-tertiary)]">Living codebase context</p>
           </div>
         </SheetContent>
       </Sheet>
