@@ -7,3 +7,12 @@ node_modules/
 dist/
 build/
 .repowise/
+
+# Local agent/editor configuration
+/.claude/
+/.codex/
+/.agents/
+/AGENTS.md
+/CLAUDE.md
+/GEMINI.md
+/.mcp.json
