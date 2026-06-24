@@ -47,6 +47,7 @@ async def persist_pipeline_result(
     )
     from repowise.core.persistence.crud import (
         bulk_upsert_decisions,
+        prune_git_metadata_to_paths,
         save_dead_code_findings,
         upsert_git_metadata_bulk,
     )
@@ -130,6 +131,12 @@ async def persist_pipeline_result(
         logger.warning("security_scan_skipped", error=str(_sec_err))
 
     # ---- Git metadata --------------------------------------------------------
+    if result.git_summary is not None:
+        await prune_git_metadata_to_paths(
+            session,
+            repo_id,
+            [meta.get("file_path", "") for meta in result.git_metadata_list],
+        )
     if result.git_metadata_list:
         await upsert_git_metadata_bulk(session, repo_id, result.git_metadata_list)
 

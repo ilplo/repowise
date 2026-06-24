@@ -24,6 +24,8 @@ from typing import Any
 
 import structlog
 
+from repowise.core.hotspots import is_hotspot
+
 logger = structlog.get_logger(__name__)
 
 # Silence GitPython's _CatFileContentStream.__del__ ValueError spam.
@@ -253,6 +255,11 @@ def _should_skip_index(file_path: str) -> bool:
     return Path(file_path).suffix.lower() not in _CODE_EXTENSIONS
 
 
+def should_index_git_file(file_path: str) -> bool:
+    """Return True when per-file git metadata should be collected."""
+    return not _should_skip_index(file_path)
+
+
 @dataclass
 class GitIndexSummary:
     files_indexed: int
@@ -476,7 +483,7 @@ class GitIndexer:
                     )
                     return {"file_path": file_path}
 
-        tasks = [index_one(fp) for fp in changed_file_paths]
+        tasks = [index_one(fp) for fp in changed_file_paths if should_index_git_file(fp)]
         results_raw = await asyncio.gather(*tasks, return_exceptions=True)
 
         results: list[dict] = []
@@ -1002,9 +1009,13 @@ class GitIndexer:
         for rank, idx in enumerate(sorted_by_churn):
             metadata_list[idx]["churn_percentile"] = rank / total if total > 0 else 0.0
 
-        # Hotspot: top 25% churn (i.e., churn_percentile >= 0.75)
+        # Hotspot: top churn percentile plus a minimum absolute activity floor.
+        # The floor prevents young or small repos from labeling one-off edits as
+        # high churn solely because they rank in the top quartile.
         for meta in metadata_list:
             commit_90d = meta.get("commit_count_90d", 0)
             churn_pct = meta.get("churn_percentile", 0.0)
-            if churn_pct >= 0.75 and commit_90d > 0:
-                meta["is_hotspot"] = True
+            meta["is_hotspot"] = is_hotspot(
+                churn_percentile=churn_pct,
+                commit_count_90d=commit_90d,
+            )

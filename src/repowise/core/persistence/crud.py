@@ -18,9 +18,15 @@ import json
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import select, text
+from sqlalchemy import delete, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from repowise.core.hotspots import (
+    HOTSPOT_MIN_COMMITS_90D,
+    HOTSPOT_PERCENTILE_THRESHOLD,
+    is_hotspot,
+)
+from repowise.core.ingestion.git_indexer import should_index_git_file
 from repowise.target_repo import canonicalize_target_repo_path
 
 from .page_ids import make_storage_page_id, parse_storage_page_id
@@ -751,6 +757,41 @@ async def upsert_git_metadata_bulk(
         await session.flush()
 
 
+async def delete_git_metadata_for_paths(
+    session: AsyncSession,
+    repository_id: str,
+    file_paths: list[str],
+) -> int:
+    """Delete git metadata rows for specific paths and return the row count."""
+    if not file_paths:
+        return 0
+    result = await session.execute(
+        delete(GitMetadata).where(
+            GitMetadata.repository_id == repository_id,
+            GitMetadata.file_path.in_(file_paths),
+        )
+    )
+    await session.flush()
+    return int(result.rowcount or 0)
+
+
+async def prune_git_metadata_to_paths(
+    session: AsyncSession,
+    repository_id: str,
+    current_file_paths: list[str],
+) -> int:
+    """Remove git metadata rows for paths absent from a full git index run."""
+    current = set(current_file_paths)
+    result = await session.execute(
+        select(GitMetadata).where(GitMetadata.repository_id == repository_id)
+    )
+    stale = [row for row in result.scalars().all() if row.file_path not in current]
+    for row in stale:
+        await session.delete(row)
+    await session.flush()
+    return len(stale)
+
+
 async def recompute_git_percentiles(
     session: AsyncSession,
     repository_id: str,
@@ -783,11 +824,18 @@ WITH ranked AS (
 )
 UPDATE git_metadata
 SET churn_percentile = (SELECT prank FROM ranked WHERE ranked.id = git_metadata.id),
-    is_hotspot = ((SELECT prank FROM ranked WHERE ranked.id = git_metadata.id) >= 0.75
-                  AND git_metadata.commit_count_90d > 0)
+    is_hotspot = ((SELECT prank FROM ranked WHERE ranked.id = git_metadata.id) >= :hotspot_percentile
+                  AND git_metadata.commit_count_90d >= :hotspot_min_commits)
 WHERE repository_id = :repo_id;
 """
-    await session.execute(text(sql), {"repo_id": repository_id})
+    await session.execute(
+        text(sql),
+        {
+            "repo_id": repository_id,
+            "hotspot_percentile": HOTSPOT_PERCENTILE_THRESHOLD,
+            "hotspot_min_commits": HOTSPOT_MIN_COMMITS_90D,
+        },
+    )
     await session.flush()
     return len(rows)
 
@@ -933,6 +981,7 @@ async def get_dead_code_summary(session: AsyncSession, repository_id: str) -> di
 # ---------------------------------------------------------------------------
 
 _VALID_DECISION_STATUSES = frozenset({"proposed", "active", "deprecated", "superseded"})
+_ATTENTION_DECISION_MIN_CONFIDENCE = 0.8
 
 
 async def upsert_decision(
@@ -1262,17 +1311,26 @@ async def get_decision_health_summary(
                 stale_decisions.append(d)
             for fp in json.loads(d.affected_files_json):
                 governed_files.add(fp)
-        elif d.status == "proposed":
+        elif (
+            d.status == "proposed"
+            and d.confidence >= _ATTENTION_DECISION_MIN_CONFIDENCE
+            and d.source != "readme_mining"
+        ):
             proposed_decisions.append(d)
 
     # Find ungoverned hotspots
     hotspot_result = await session.execute(
-        select(GitMetadata.file_path).where(
-            GitMetadata.repository_id == repository_id,
-            GitMetadata.is_hotspot == True,  # noqa: E712
-        )
+        select(GitMetadata).where(GitMetadata.repository_id == repository_id)
     )
-    hotspot_files = {row[0] for row in hotspot_result.all()}
+    hotspot_files = {
+        meta.file_path
+        for meta in hotspot_result.scalars().all()
+        if should_index_git_file(meta.file_path)
+        and is_hotspot(
+            churn_percentile=meta.churn_percentile,
+            commit_count_90d=meta.commit_count_90d,
+        )
+    }
     ungoverned = sorted(hotspot_files - governed_files)
 
     return {

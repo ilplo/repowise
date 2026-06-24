@@ -132,8 +132,9 @@ def update_command(
 
     # Re-index git metadata for changed files
     git_meta_map: dict[str, dict] = {}
+    skipped_git_paths: list[str] = []
     try:
-        from repowise.core.ingestion.git_indexer import GitIndexer
+        from repowise.core.ingestion.git_indexer import GitIndexer, should_index_git_file
 
         _commit_limit = repo_config.get("commit_limit")
         _follow_renames = repo_config.get("follow_renames", False)
@@ -143,6 +144,7 @@ def update_command(
             follow_renames=_follow_renames,
         )
         changed_paths = [fd.path for fd in file_diffs]
+        skipped_git_paths = [fp for fp in changed_paths if not should_index_git_file(fp)]
         updated_meta = run_async(git_indexer.index_changed_files(changed_paths))
         git_meta_map = {m["file_path"]: m for m in updated_meta}
         graph_builder.update_co_change_edges(git_meta_map)
@@ -236,19 +238,22 @@ def update_command(
                 await upsert_page_from_generated(session, page, repo_id)
 
         # Persist updated git metadata + recompute percentiles
-        if git_meta_map:
+        if git_meta_map or skipped_git_paths:
             try:
                 from repowise.core.persistence.crud import (
+                    delete_git_metadata_for_paths,
                     recompute_git_percentiles,
                     upsert_git_metadata_bulk,
                 )
 
                 async with get_session(sf) as session:
-                    await upsert_git_metadata_bulk(
-                        session,
-                        repo_id,
-                        list(git_meta_map.values()),
-                    )
+                    await delete_git_metadata_for_paths(session, repo_id, skipped_git_paths)
+                    if git_meta_map:
+                        await upsert_git_metadata_bulk(
+                            session,
+                            repo_id,
+                            list(git_meta_map.values()),
+                        )
                     await recompute_git_percentiles(session, repo_id)
             except Exception:
                 pass  # git persistence is best-effort

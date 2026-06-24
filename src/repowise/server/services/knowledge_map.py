@@ -8,7 +8,11 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from repowise.core.ingestion.git_indexer import should_index_git_file
 from repowise.core.persistence.models import GitMetadata, GraphNode, Page
+
+_SILO_OWNER_THRESHOLD = 0.8
+_MIN_FILE_COMMITS_FOR_SILO = 20
 
 
 async def compute_knowledge_map(session: AsyncSession, repo_id: str) -> dict[str, Any]:
@@ -24,7 +28,7 @@ async def compute_knowledge_map(session: AsyncSession, repo_id: str) -> dict[str
     git_res = await session.execute(
         select(GitMetadata).where(GitMetadata.repository_id == repo_id)
     )
-    all_git = git_res.scalars().all()
+    all_git = [g for g in git_res.scalars().all() if should_index_git_file(g.file_path)]
 
     if not all_git:
         return {}
@@ -53,7 +57,11 @@ async def compute_knowledge_map(session: AsyncSession, repo_id: str) -> dict[str
         key=lambda x: -x["files_owned"],
     )[:10]
 
-    # knowledge_silos: files where primary owner has > 80% ownership
+    repo_owner_count = len({g.primary_owner_email for g in all_git if g.primary_owner_email})
+
+    # knowledge_silos: substantial files where one owner dominates in a repo
+    # with more than one owner. Single-owner repositories otherwise report
+    # every file as a silo, which is not an actionable attention signal.
     knowledge_silos = [
         {
             "file_path": g.file_path,
@@ -61,7 +69,9 @@ async def compute_knowledge_map(session: AsyncSession, repo_id: str) -> dict[str
             "owner_pct": round(float(g.primary_owner_commit_pct or 0.0), 3),
         }
         for g in all_git
-        if (g.primary_owner_commit_pct or 0.0) > 0.8
+        if repo_owner_count >= 2
+        and (g.primary_owner_commit_pct or 0.0) > _SILO_OWNER_THRESHOLD
+        and (g.commit_count_total or 0) >= _MIN_FILE_COMMITS_FOR_SILO
     ]
 
     # onboarding_targets: high-centrality files with fewest docs

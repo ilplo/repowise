@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from repowise.core.ingestion.git_indexer import should_index_git_file
 from repowise.core.persistence import crud
 from repowise.core.persistence.models import GitMetadata
 from repowise.server.deps import get_db_session, verify_api_key
@@ -24,6 +25,10 @@ router = APIRouter(
     tags=["git"],
     dependencies=[Depends(verify_api_key)],
 )
+
+_SILO_OWNER_THRESHOLD = 0.8
+_MIN_MODULE_FILES_FOR_SILO = 3
+_MIN_FILE_COMMITS_FOR_SILO = 20
 
 
 @router.get("/{repo_id}/git-metadata", response_model=GitMetadataResponse)
@@ -92,7 +97,9 @@ async def get_ownership(
 ) -> list[OwnershipEntry]:
     """Get ownership breakdown for a repository."""
     result = await session.execute(select(GitMetadata).where(GitMetadata.repository_id == repo_id))
-    all_meta = result.scalars().all()
+    all_meta = [m for m in result.scalars().all() if should_index_git_file(m.file_path)]
+    repo_owner_count = len({m.primary_owner_name for m in all_meta if m.primary_owner_name})
+    has_cross_owner_context = repo_owner_count >= 2
 
     if granularity == "file":
         return [
@@ -101,7 +108,11 @@ async def get_ownership(
                 primary_owner=m.primary_owner_name,
                 owner_pct=m.primary_owner_commit_pct,
                 file_count=1,
-                is_silo=(m.primary_owner_commit_pct or 0) > 0.8,
+                is_silo=(
+                    has_cross_owner_context
+                    and (m.primary_owner_commit_pct or 0) > _SILO_OWNER_THRESHOLD
+                    and (m.commit_count_total or 0) >= _MIN_FILE_COMMITS_FOR_SILO
+                ),
             )
             for m in all_meta
         ]
@@ -133,7 +144,11 @@ async def get_ownership(
                 primary_owner=top_owner,
                 owner_pct=owner_pct,
                 file_count=len(files),
-                is_silo=owner_pct > 0.8,
+                is_silo=(
+                    has_cross_owner_context
+                    and len(files) >= _MIN_MODULE_FILES_FOR_SILO
+                    and owner_pct > _SILO_OWNER_THRESHOLD
+                ),
             )
         )
     return entries
